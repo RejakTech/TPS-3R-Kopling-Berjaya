@@ -2,49 +2,60 @@
 <?php
 session_start();
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'warga') {
     header("Location: ../auth/login.php");
     exit;
 }
 
 include '../config/koneksi.php';
 
-// Ambil 3 notifikasi terbaru warga
-$query_notifikasi_terbaru = mysqli_query(
+$user_id = (int) $_SESSION['user_id'];
+$nama_warga = htmlspecialchars($_SESSION['nama'] ?? 'Warga', ENT_QUOTES, 'UTF-8');
+
+/* =========================================
+   1. NOTIFIKASI TERBARU
+========================================= */
+
+$stmt = mysqli_prepare(
     $conn,
     "SELECT id, judul, pesan, tipe, dibaca, tanggal_dibuat, link
      FROM notifikasi
-     WHERE user_id = " . (int) $_SESSION['user_id'] . "
+     WHERE user_id = ?
      ORDER BY tanggal_dibuat DESC, id DESC
      LIMIT 3"
 );
+mysqli_stmt_bind_param($stmt, "i", $user_id);
+mysqli_stmt_execute($stmt);
+$query_notifikasi_terbaru = mysqli_stmt_get_result($stmt);
 
-$user_id = (int) $_SESSION['user_id'];
+$notifikasi = [];
+while ($row = mysqli_fetch_assoc($query_notifikasi_terbaru)) {
+    $notifikasi[] = $row;
+}
+mysqli_stmt_close($stmt);
 
-// 1. Menghitung notifikasi yang belum dibaca
-$stmt_notifikasi = mysqli_prepare(
+
+/* =========================================
+   2. JUMLAH NOTIFIKASI BELUM DIBACA
+========================================= */
+
+$stmt = mysqli_prepare(
     $conn,
     "SELECT COUNT(*) AS total
      FROM notifikasi
      WHERE user_id = ? AND dibaca = 0"
 );
+mysqli_stmt_bind_param($stmt, "i", $user_id);
+mysqli_stmt_execute($stmt);
+$data_notifikasi = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+$jumlah_notifikasi = (int) ($data_notifikasi['total'] ?? 0);
+mysqli_stmt_close($stmt);
 
-mysqli_stmt_bind_param(
-    $stmt_notifikasi,
-    "i",
-    $user_id
-);
 
-mysqli_stmt_execute($stmt_notifikasi);
+/* =========================================
+   3. SETORAN TERBARU
+========================================= */
 
-$data_notifikasi = mysqli_fetch_assoc(
-    mysqli_stmt_get_result($stmt_notifikasi)
-);
-
-$jumlah_notifikasi = (int) $data_notifikasi['total'];
-
-mysqli_stmt_close($stmt_notifikasi);
-// 5. Ambil setoran terbaru
 $stmt = mysqli_prepare(
     $conn,
     "SELECT
@@ -56,85 +67,95 @@ $stmt = mysqli_prepare(
         s.alasan_penolakan,
         k.nama_kategori
      FROM setoran_sampah s
-     INNER JOIN kategori_sampah k
-        ON s.kategori_id = k.id
+     INNER JOIN kategori_sampah k ON s.kategori_id = k.id
      WHERE s.user_id = ?
      ORDER BY s.id DESC
      LIMIT 1"
 );
-
 mysqli_stmt_bind_param($stmt, "i", $user_id);
 mysqli_stmt_execute($stmt);
-
-$result = mysqli_stmt_get_result($stmt);
-$setoran_terbaru = mysqli_fetch_assoc($result);
-
+$setoran_terbaru = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
 mysqli_stmt_close($stmt);
 
-// 2. Ambil saldo tabungan
+
+/* =========================================
+   4. SALDO TABUNGAN
+========================================= */
+
 $stmt = mysqli_prepare(
     $conn,
     "SELECT COALESCE(MAX(saldo), 0) AS saldo
      FROM tabungan_warga
      WHERE user_id = ?"
 );
-
 mysqli_stmt_bind_param($stmt, "i", $user_id);
 mysqli_stmt_execute($stmt);
-
-$result = mysqli_stmt_get_result($stmt);
-$data_saldo = mysqli_fetch_assoc($result);
-
-$saldo = (float) $data_saldo['saldo'];
-
+$data_saldo = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+$saldo = (float) ($data_saldo['saldo'] ?? 0);
 mysqli_stmt_close($stmt);
 
 
-// 3. Total berat setoran yang diterima
+/* =========================================
+   5. TOTAL BERAT SETORAN DITERIMA
+========================================= */
+
 $stmt = mysqli_prepare(
     $conn,
     "SELECT COALESCE(SUM(berat_kg), 0) AS total_berat
      FROM setoran_sampah
-     WHERE user_id = ?
-     AND status = 'diterima'"
+     WHERE user_id = ? AND status = 'diterima'"
 );
-
 mysqli_stmt_bind_param($stmt, "i", $user_id);
 mysqli_stmt_execute($stmt);
-
-$result = mysqli_stmt_get_result($stmt);
-$data_setoran = mysqli_fetch_assoc($result);
-
-$total_berat = (float) $data_setoran['total_berat'];
-
+$data_setoran = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+$total_berat = (float) ($data_setoran['total_berat'] ?? 0);
 mysqli_stmt_close($stmt);
 
 
-// 4. Total transaksi tabungan
+/* =========================================
+   6. TOTAL TRANSAKSI TABUNGAN
+========================================= */
+
 $stmt = mysqli_prepare(
     $conn,
     "SELECT COUNT(m.id) AS total_transaksi
      FROM mutasi_tabungan m
-     INNER JOIN tabungan_warga t
-        ON m.tabungan_id = t.id
+     INNER JOIN tabungan_warga t ON m.tabungan_id = t.id
      WHERE t.user_id = ?"
 );
-
 mysqli_stmt_bind_param($stmt, "i", $user_id);
 mysqli_stmt_execute($stmt);
-
-$result = mysqli_stmt_get_result($stmt);
-$data_transaksi = mysqli_fetch_assoc($result);
-
-$total_transaksi = (int) $data_transaksi['total_transaksi'];
-
+$data_transaksi = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+$total_transaksi = (int) ($data_transaksi['total_transaksi'] ?? 0);
 mysqli_stmt_close($stmt);
 
+
+/* =========================================
+   7. FORMAT TANGGAL
+========================================= */
+
+function tanggalIndonesia($tanggal)
+{
+    if (!$tanggal) {
+        return '-';
+    }
+
+    $bulan = [
+        1 => 'Januari', 'Februari', 'Maret', 'April',
+        'Mei', 'Juni', 'Juli', 'Agustus',
+        'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    $waktu = strtotime($tanggal);
+
+    return date('d', $waktu) . ' ' .
+        $bulan[(int) date('n', $waktu)] . ' ' .
+        date('Y', $waktu);
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="id">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -143,797 +164,2024 @@ mysqli_stmt_close($stmt);
 
     <link rel="stylesheet" href="../assets/css/style.css">
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
     <style>
-
-        /* ========================================
-   PROFILE MENU HEADER
-======================================== */
-
-.warga-profile-menu {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    white-space: nowrap;
-}
-
-.warga-profile-menu > span {
-    color: #27423d;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.btn-profil {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    padding: 9px 15px;
-
-    background: #ffffff;
-    color: #0f766e;
-
-    border: 1px solid #d7e7e3;
-    border-radius: 9px;
-
-    text-decoration: none;
-
-    font-size: 13px;
-    font-weight: 600;
-
-    transition: all 0.2s ease;
-}
-
-.btn-profil:hover {
-    background: #edf7f4;
-    border-color: #bcded7;
-}
-
-.btn-logout {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    padding: 9px 16px;
-
-    background: #0f766e;
-    color: #ffffff;
-
-    border: 1px solid #0f766e;
-    border-radius: 9px;
-
-    text-decoration: none;
-
-    font-size: 13px;
-    font-weight: 600;
-
-    transition: all 0.2s ease;
-}
-
-.btn-logout:hover {
-    background: #0c625b;
-    border-color: #0c625b;
-}
-
-/* MOBILE */
-@media (max-width: 600px) {
-
-    .warga-profile-menu {
-        gap: 6px;
-    }
-
-    .warga-profile-menu > span {
-        display: none;
-    }
-
-    .btn-profil,
-    .btn-logout {
-        padding: 8px 12px;
-        font-size: 12px;
-    }
-}
-
-        /* Heading Dashboard dan Notifikasi */
-        .warga-heading {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
+        :root {
+            --navy: #0B354D;
+            --blue: #12677F;
+            --teal: #147F91;
+            --cyan: #17B8C8;
+            --bg: #F2F7FA;
+            --white: #FFFFFF;
+            --text: #183B55;
+            --muted: #8295A2;
+            --border: #E5EDF2;
+            --shadow: 0 8px 28px rgba(11, 53, 77, .055);
         }
 
-        .warga-heading-text {
-            flex: 1;
+        * {
+            box-sizing: border-box;
         }
 
-        .warga-heading-text h1 {
-            margin-bottom: 7px;
-        }
-
-        .warga-heading-text p {
+        body {
             margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
         }
 
-        /* Ikon Notifikasi */
-        .warga-notification-link {
-            position: relative;
-            display: inline-flex;
+        a {
+            text-decoration: none;
+        }
+
+        /* =================================
+           LAYOUT UTAMA
+        ================================= */
+
+        .dashboard-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* =================================
+           SIDEBAR
+        ================================= */
+
+        .warga-sidebar {
+            width: 255px;
+            min-width: 255px;
+            min-height: 100vh;
+            padding: 25px 17px;
+            background: linear-gradient(180deg, #0B354D 0%, #12677F 65%, #147F91 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 5px 9px 27px;
+            border-bottom: 1px solid rgba(255,255,255,.15);
+        }
+
+        .brand-icon {
+            width: 43px;
+            height: 43px;
+            min-width: 43px;
+            display: flex;
             align-items: center;
             justify-content: center;
-            width: 46px;
-            height: 46px;
-            min-width: 46px;
+            background: rgba(255,255,255,.17);
+            border: 1px solid rgba(255,255,255,.2);
+            border-radius: 13px;
+            font-size: 23px;
+        }
+
+        .brand-text h2 {
+            margin: 0;
+            color: white;
+            font-size: 14px;
+            font-weight: 800;
+            line-height: 1.4;
+        }
+
+        .brand-text p {
+            margin: 3px 0 0;
+            color: rgba(255,255,255,.7);
+            font-size: 10px;
+        }
+
+        .sidebar-profile {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            margin: 23px 0 27px;
+            padding: 13px 11px;
+            background: rgba(255,255,255,.11);
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 13px;
+        }
+
+        .profile-avatar {
+            width: 39px;
+            height: 39px;
+            min-width: 39px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #17B8C8, #79DCE2);
+            color: #0B354D;
+            border-radius: 50%;
+            font-size: 17px;
+            font-weight: 800;
+        }
+
+        .profile-info {
+            min-width: 0;
+        }
+
+        .profile-info strong {
+            display: block;
+            color: white;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .profile-info span {
+            display: block;
+            margin-top: 4px;
+            color: rgba(255,255,255,.68);
+            font-size: 10px;
+        }
+
+        .sidebar-label {
+            margin: 0 10px 11px;
+            color: rgba(255,255,255,.55);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.1px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 13px;
+            color: rgba(255,255,255,.78);
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 600;
+            transition: .2s ease;
+        }
+
+        .sidebar-link:hover,
+        .sidebar-link.active {
+            color: white;
+            background: rgba(255,255,255,.17);
+        }
+
+        .sidebar-link.active {
+            box-shadow: inset 3px 0 #57E0E4;
+        }
+
+        .sidebar-icon {
+            width: 20px;
+            text-align: center;
+            font-size: 17px;
+        }
+
+        .sidebar-bottom {
+            margin-top: auto;
+            padding-top: 25px;
+        }
+
+        .sidebar-bottom .sidebar-link {
+            border-top: 1px solid rgba(255,255,255,.13);
+            border-radius: 0;
+            padding-top: 17px;
+        }
+
+        .sidebar-bottom .logout-link {
+            color: #FFE1E1;
+        }
+
+        /* =================================
+           AREA KONTEN
+        ================================= */
+
+        .main-area {
+            flex: 1;
+            min-width: 0;
+            padding: 27px 32px 45px;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 27px;
+        }
+
+        .topbar-title h1 {
+            margin: 0;
+            color: var(--navy);
+            font-size: 23px;
+            font-weight: 800;
+        }
+
+        .topbar-title p {
+            margin: 7px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .notification-button {
+            position: relative;
+            width: 43px;
+            height: 43px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            border: 1px solid var(--border);
             border-radius: 12px;
-            background: #edf7f3;
-            color: #145c52;
-            text-decoration: none;
-            transition: 0.2s ease;
+            color: var(--blue);
+            font-size: 19px;
+            box-shadow: var(--shadow);
         }
 
-        .warga-notification-link:hover {
-            background: #dcefe8;
-            transform: translateY(-2px);
-        }
-
-        .warga-notification-icon {
-            font-size: 21px;
-        }
-
-        .warga-notification-badge {
+        .notification-badge {
             position: absolute;
             top: -6px;
             right: -6px;
             min-width: 19px;
             height: 19px;
             padding: 0 4px;
-            border-radius: 20px;
-            background: #e53935;
-            color: white;
-            font-size: 10px;
-            font-weight: 700;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: #E64C4C;
+            color: white;
             border: 2px solid white;
-            box-sizing: content-box;
+            border-radius: 20px;
+            font-size: 9px;
+            font-weight: 800;
         }
 
-        @media (max-width: 520px) {
-            .warga-heading {
-                align-items: flex-start;
-                gap: 12px;
+        .topbar-profile {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 7px 12px 7px 7px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .topbar-avatar {
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #E3F3F7;
+            color: var(--blue);
+            border-radius: 50%;
+            font-weight: 800;
+            font-size: 12px;
+        }
+
+        .topbar-profile span {
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        /* =================================
+           HERO
+        ================================= */
+
+        .welcome-banner {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            min-height: 175px;
+            padding: 29px 32px;
+            overflow: hidden;
+            background: linear-gradient(110deg, #0B354D, #12677F 65%, #17A9B8);
+            border-radius: 19px;
+            color: white;
+            box-shadow: 0 12px 30px rgba(11,53,77,.13);
+        }
+
+        .welcome-banner::before {
+            content: "";
+            position: absolute;
+            width: 210px;
+            height: 210px;
+            right: 105px;
+            top: -125px;
+            border: 1px solid rgba(255,255,255,.13);
+            border-radius: 50%;
+        }
+
+        .welcome-banner::after {
+            content: "";
+            position: absolute;
+            width: 170px;
+            height: 170px;
+            right: -40px;
+            bottom: -115px;
+            border: 25px solid rgba(255,255,255,.08);
+            border-radius: 50%;
+        }
+
+        .welcome-text {
+            position: relative;
+            z-index: 1;
+        }
+
+        .welcome-text span {
+            color: #A8EAF0;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .7px;
+        }
+
+        .welcome-text h2 {
+            margin: 10px 0 8px;
+            color: white;
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .welcome-text p {
+            max-width: 480px;
+            margin: 0;
+            color: rgba(255,255,255,.78);
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .welcome-button {
+            position: relative;
+            z-index: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 9px;
+            padding: 12px 17px;
+            background: white;
+            color: var(--navy);
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 800;
+            white-space: nowrap;
+            transition: .2s;
+        }
+
+        .welcome-button:hover {
+            background: #DDF8FA;
+            transform: translateY(-2px);
+        }
+
+        /* =================================
+           STATISTIK
+        ================================= */
+
+        .section-heading {
+            margin: 29px 0 16px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            color: var(--navy);
+            font-size: 16px;
+            font-weight: 800;
+        }
+
+        .section-heading p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 17px;
+        }
+
+        .stat-card {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            min-width: 0;
+            padding: 20px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+            transition: .2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .stat-icon {
+            width: 47px;
+            height: 47px;
+            min-width: 47px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 13px;
+            font-size: 21px;
+        }
+
+        .stat-icon.saldo {
+            background: #E4F5F7;
+        }
+
+        .stat-icon.berat {
+            background: #E6F3FA;
+        }
+
+        .stat-icon.transaksi {
+            background: #F0ECFA;
+        }
+
+        .stat-info {
+            min-width: 0;
+        }
+
+        .stat-info span {
+            display: block;
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .stat-info strong {
+            display: block;
+            margin-top: 7px;
+            color: var(--navy);
+            font-size: 18px;
+            font-weight: 800;
+            overflow-wrap: anywhere;
+        }
+
+        /* =================================
+           GRID KONTEN
+        ================================= */
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr);
+            gap: 18px;
+            margin-top: 25px;
+        }
+
+        .panel {
+            min-width: 0;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 18px 20px;
+            border-bottom: 1px solid #EDF2F5;
+        }
+
+        .panel-header h3 {
+            margin: 0;
+            color: var(--navy);
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .panel-header a {
+            color: var(--teal);
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .panel-body {
+            padding: 18px 20px;
+        }
+
+        /* =================================
+           SETORAN TERBARU
+        ================================= */
+
+        .setoran-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .setoran-icon {
+            width: 43px;
+            height: 43px;
+            min-width: 43px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #E6F5F6;
+            border-radius: 12px;
+            font-size: 20px;
+        }
+
+        .setoran-detail {
+            min-width: 0;
+        }
+
+        .setoran-detail strong {
+            display: block;
+            color: var(--navy);
+            font-size: 12px;
+        }
+
+        .setoran-detail span {
+            display: block;
+            margin-top: 5px;
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .setoran-status {
+            margin-top: 17px;
+            padding-top: 15px;
+            border-top: 1px solid #EDF2F5;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 7px 11px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 800;
+        }
+
+        .status-menunggu {
+            background: #FFF5DE;
+            color: #A46B00;
+        }
+
+        .status-diterima {
+            background: #E4F7ED;
+            color: #16804F;
+        }
+
+        .status-ditolak {
+            background: #FDECEC;
+            color: #C0392B;
+        }
+
+        .setoran-price {
+            display: block;
+            margin-top: 10px;
+            color: var(--navy);
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .setoran-reason {
+            display: block;
+            margin-top: 8px;
+            color: #C0392B;
+            font-size: 10px;
+            line-height: 1.5;
+        }
+
+        .empty-state {
+            padding: 16px 5px;
+            text-align: center;
+        }
+
+        .empty-state .empty-icon {
+            font-size: 30px;
+        }
+
+        .empty-state strong {
+            display: block;
+            margin-top: 8px;
+            color: var(--navy);
+            font-size: 12px;
+        }
+
+        .empty-state p {
+            margin: 6px 0 12px;
+            color: var(--muted);
+            font-size: 10px;
+        }
+
+        .small-action {
+            display: inline-block;
+            padding: 9px 13px;
+            background: #E7F4F7;
+            color: var(--teal);
+            border-radius: 8px;
+            font-size: 10px;
+            font-weight: 800;
+        }
+
+        /* =================================
+           NOTIFIKASI
+        ================================= */
+
+        .notification-item {
+            display: flex;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid #EDF2F5;
+        }
+
+        .notification-item:first-child {
+            padding-top: 0;
+        }
+
+        .notification-item:last-child {
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+
+        .notification-item.unread {
+            background: #F3FAFC;
+            margin: 0 -10px;
+            padding: 12px 10px;
+            border-radius: 9px;
+        }
+
+        .notification-item:first-child.unread {
+            padding-top: 12px;
+        }
+
+        .notification-icon {
+            width: 32px;
+            height: 32px;
+            min-width: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #E5F3F7;
+            color: var(--teal);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+        .notification-detail {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .notification-detail strong {
+            display: block;
+            color: var(--navy);
+            font-size: 11px;
+        }
+
+        .notification-detail p {
+            margin: 5px 0 0;
+            color: #718995;
+            font-size: 10px;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
+        .notification-detail small {
+            display: block;
+            margin-top: 5px;
+            color: #9AAAB3;
+            font-size: 9px;
+        }
+
+        .notification-empty {
+            padding: 18px 5px;
+            color: var(--muted);
+            text-align: center;
+            font-size: 11px;
+        }
+
+        /* =================================
+           LAYANAN
+        ================================= */
+
+        .services-section {
+            margin-top: 28px;
+        }
+
+        .services-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 15px;
+        }
+
+        .service-card {
+            display: block;
+            min-width: 0;
+            padding: 19px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+            transition: .22s ease;
+        }
+
+        .service-card:hover {
+            transform: translateY(-4px);
+            border-color: #A8DCE9;
+            box-shadow: 0 12px 25px rgba(11,53,77,.09);
+        }
+
+        .service-icon {
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #E6F4F7;
+            border-radius: 12px;
+            font-size: 20px;
+        }
+
+        .service-card h3 {
+            margin: 13px 0 7px;
+            color: var(--navy);
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .service-card p {
+            min-height: 34px;
+            margin: 0;
+            color: var(--muted);
+            font-size: 10px;
+            line-height: 1.6;
+        }
+
+        .service-card > span {
+            display: inline-block;
+            margin-top: 13px;
+            color: var(--teal);
+            font-size: 10px;
+            font-weight: 800;
+        }
+
+        .service-card.qr-service {
+            background: linear-gradient(145deg, #FFFFFF, #EAF8FA);
+            border-color: #B9DFEA;
+        }
+
+        .service-card.qr-service .service-icon {
+            background: linear-gradient(135deg, #0B354D, #17B8C8);
+            color: white;
+        }
+
+        /* =================================
+           FOOTER
+        ================================= */
+
+        .dashboard-footer {
+            margin-top: 32px;
+            padding-top: 17px;
+            border-top: 1px solid #E2EBF0;
+            color: #94A5AE;
+            text-align: center;
+            font-size: 10px;
+        }
+
+        /* =================================
+           TABLET
+        ================================= */
+
+        @media (max-width: 1050px) {
+            .warga-sidebar {
+                width: 220px;
+                min-width: 220px;
             }
 
-            .warga-notification-link {
+            .main-area {
+                padding: 24px 22px 35px;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .services-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        /* =================================
+           HP
+        ================================= */
+
+        @media (max-width: 700px) {
+            .dashboard-layout {
+                display: block;
+            }
+
+            .warga-sidebar {
+                width: 100%;
+                min-width: 0;
+                min-height: auto;
+                padding: 14px 13px;
+            }
+
+            .sidebar-brand {
+                padding: 0 3px 13px;
+            }
+
+            .brand-icon {
+                width: 37px;
+                height: 37px;
+                min-width: 37px;
+                font-size: 19px;
+            }
+
+            .brand-text h2 {
+                font-size: 13px;
+            }
+
+            .brand-text p {
+                font-size: 9px;
+            }
+
+            .sidebar-profile {
+                display: none;
+            }
+
+            .sidebar-label {
+                display: none;
+            }
+
+            .sidebar-menu {
+                flex-direction: row;
+                gap: 7px;
+                overflow-x: auto;
+                padding: 12px 0 3px;
+                scrollbar-width: thin;
+            }
+
+            .sidebar-link {
+                flex: 0 0 auto;
+                padding: 9px 11px;
+                gap: 7px;
+                background: rgba(255,255,255,.08);
+                font-size: 10px;
+            }
+
+            .sidebar-link.active {
+                box-shadow: inset 0 -3px #57E0E4;
+            }
+
+            .sidebar-icon {
+                font-size: 14px;
+            }
+
+            .sidebar-bottom {
+                display: none;
+            }
+
+            .main-area {
+                padding: 21px 15px 30px;
+            }
+
+            .topbar {
+                margin-bottom: 19px;
+            }
+
+            .topbar-title h1 {
+                font-size: 19px;
+            }
+
+            .topbar-title p {
+                font-size: 10px;
+                line-height: 1.5;
+            }
+
+            .topbar-profile {
+                display: none;
+            }
+
+            .notification-button {
+                width: 39px;
+                height: 39px;
+            }
+
+            .welcome-banner {
+                min-height: 160px;
+                padding: 22px 19px;
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 16px;
+            }
+
+            .welcome-text h2 {
+                font-size: 20px;
+            }
+
+            .welcome-text p {
+                font-size: 10px;
+            }
+
+            .welcome-button {
+                padding: 10px 13px;
+                font-size: 10px;
+            }
+
+            .section-heading {
+                margin-top: 23px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 11px;
+            }
+
+            .stat-card {
+                padding: 15px;
+            }
+
+            .stat-icon {
                 width: 42px;
                 height: 42px;
                 min-width: 42px;
             }
+
+            .stat-info strong {
+                font-size: 17px;
+            }
+
+            .content-grid {
+                gap: 14px;
+                margin-top: 20px;
+            }
+
+            .panel-header {
+                padding: 15px;
+            }
+
+            .panel-body {
+                padding: 15px;
+            }
+
+            .services-section {
+                margin-top: 23px;
+            }
+
+            .services-grid {
+                grid-template-columns: 1fr;
+                gap: 11px;
+            }
+
+            .service-card {
+                padding: 16px;
+            }
+
+            .service-card p {
+                min-height: 0;
+            }
+
+            .dashboard-footer {
+                font-size: 9px;
+            }
         }
 
-        /* ========================================
-   SETORAN TERBARU
-======================================== */
+        @media (max-width: 360px) {
+            .main-area {
+                padding-left: 11px;
+                padding-right: 11px;
+            }
 
-.setoran-terbaru-section {
-    margin-top: 30px;
-}
+            .welcome-text h2 {
+                font-size: 18px;
+            }
 
-.setoran-terbaru-heading {
+            .topbar-title h1 {
+                font-size: 17px;
+            }
+        }
+
+/* ==========================================
+   SIDEBAR WARGA - SAMA PERSIS DENGAN ADMIN
+========================================== */
+
+.warga-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+
+    width: 250px;
+    min-width: 250px;
+    height: 100vh;
+    min-height: 100vh;
+
+    /* Penting: tidak menggunakan padding luar */
+    padding: 0;
+
+    background: linear-gradient(
+        180deg,
+        #071F33 0%,
+        #0B2D46 100%
+    );
+
+    border-right: 1px solid rgba(255,255,255,.08);
+
+    z-index: 1000;
+
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+/* BRAND / LOGO */
+.sidebar-brand {
+    display: block;
+    padding: 24px 22px 20px;
+
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.02);
+}
+
+.sidebar-brand-top {
+    display: flex;
     align-items: center;
-    gap: 20px;
-    margin-bottom: 14px;
+    gap: 10px;
 }
 
-.setoran-terbaru-heading h2 {
-    margin: 0 0 5px;
-    color: #174c43;
-}
+/* LOGO LINGKARAN */
+.sidebar-logo {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
 
-.setoran-terbaru-heading p {
-    margin: 0;
-    color: #71817c;
-    font-size: 13px;
-}
-
-.setoran-terbaru-heading a {
-    color: #0f766e;
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.setoran-terbaru-heading a:hover {
-    text-decoration: underline;
-}
-
-.setoran-terbaru-card {
+    border-radius: 50%;
     background: #ffffff;
-    border: 1px solid #e5eeeb;
-    border-radius: 16px;
-    padding: 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 20px;
-}
 
-.setoran-terbaru-info {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-
-.setoran-terbaru-icon {
-    width: 46px;
-    height: 46px;
-    border-radius: 13px;
-    background: #e8f5f1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 21px;
+
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
-.setoran-terbaru-info h3 {
-    margin: 0 0 5px;
-    color: #174c43;
+.sidebar-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    padding: 2px;
+}
+
+/* TULISAN BRANDING */
+.sidebar-brand-top > div:last-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.sidebar-brand h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.15;
+}
+
+.sidebar-brand p {
+    margin: 5px 0 0;
+    color: #8FB3C2;
+    font-size: 10px;
+    line-height: 1.25;
+}
+
+/* NAVIGASI */
+.sidebar-nav {
+    padding: 20px 14px;
+    flex: 1;
+
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-section-title {
+    padding: 0 12px;
+    margin: 12px 0 8px;
+
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .09em;
+
+    color: #6F98A9;
+    text-transform: uppercase;
+}
+
+.sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    width: 100%;
+    padding: 11px 12px;
+    margin: 3px 0;
+
+    border-radius: 10px;
+
+    color: #B8CDD7;
+    text-decoration: none;
+
+    font-size: 13px;
+    font-weight: 600;
+
+    box-sizing: border-box;
+    transition: .18s ease;
+}
+
+.sidebar-link:hover {
+    background: rgba(24,195,216,.10);
+    color: #ffffff;
+    transform: translateX(2px);
+}
+
+.sidebar-link.active {
+    background: rgba(24,195,216,.14);
+    color: #18C3D8;
+    box-shadow: inset 3px 0 0 #18C3D8;
+}
+
+.sidebar-icon {
+    width: 22px;
+    text-align: center;
+    font-size: 16px;
+    flex: 0 0 22px;
+}
+
+/* BADGE NOTIFIKASI */
+.sidebar-badge {
+    margin-left: auto;
+    min-width: 19px;
+    padding: 3px 6px;
+
+    border-radius: 20px;
+    background: #dc3545;
+    color: #ffffff;
+
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* LOGOUT */
+.sidebar-logout {
+    color: #FFE0E0;
+}
+
+.sidebar-logout:hover {
+    background: rgba(220,53,69,.15);
+    color: #ffffff;
+}
+
+/* ==========================================
+   KONTEN DASHBOARD
+========================================== */
+
+.dashboard-layout {
+    display: block;
+    min-height: 100vh;
+}
+
+.main-area {
+    margin-left: 250px;
+    width: calc(100% - 250px);
+    min-height: 100vh;
+
+    padding: 27px 32px 45px;
+
+    box-sizing: border-box;
+}
+
+/* ==========================================
+   RESPONSIVE HP
+========================================== */
+
+@media (max-width: 700px) {
+    .warga-sidebar {
+        position: relative;
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        min-height: auto;
+    }
+
+    .sidebar-brand {
+        padding: 18px 20px;
+    }
+
+    .sidebar-nav {
+        padding: 10px 14px;
+    }
+
+    .sidebar-section-title {
+        display: none;
+    }
+
+    .sidebar-nav {
+        overflow-x: auto;
+    }
+
+    .sidebar-link {
+        font-size: 11px;
+        white-space: nowrap;
+    }
+
+    .main-area {
+        margin-left: 0;
+        width: 100%;
+        padding: 21px 15px 30px;
+    }
+}
+
+/* ==========================================
+   HAMBURGER MENU MOBILE
+========================================== */
+
+/* Tombol hamburger disembunyikan di laptop */
+.mobile-menu-button {
+    display: none;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 10px;
+
+    /* Gradasi navy ke teal */
+    background: linear-gradient(
+        135deg,
+        #071F33 0%,
+        #0B354D 55%,
+        #147F91 100%
+    );
+
+    color: white;
+    font-size: 23px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+
+    box-shadow: 0 4px 12px rgba(11, 53, 77, .20);
+    transition: .25s ease;
+}
+
+.mobile-menu-button:hover {
+    background: linear-gradient(
+        135deg,
+        #0B354D,
+        #17B8C8
+    );
+}
+/* Lapisan gelap di belakang sidebar */
+.sidebar-overlay {
+    display: none;
+}
+
+/* Tampilan HP */
+@media (max-width: 700px) {
+
+    .dashboard-layout {
+        display: block;
+    }
+
+    /* Sidebar menjadi menu geser */
+    .warga-sidebar {
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        bottom: 0;
+
+        width: 260px !important;
+        min-width: 260px !important;
+        height: 100vh !important;
+        min-height: 100vh !important;
+
+        padding: 0 !important;
+
+        display: flex;
+        flex-direction: column;
+
+        background: linear-gradient(
+            180deg,
+            #071F33 0%,
+            #0B2D46 100%
+        );
+
+        overflow-y: auto;
+        z-index: 1001;
+
+        transform: translateX(-100%);
+        transition: transform .3s ease;
+    }
+
+    /* Sidebar ketika dibuka */
+    .warga-sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Branding */
+    .sidebar-brand {
+        padding: 24px 18px 20px !important;
+    }
+
+    .sidebar-brand h2 {
+        font-size: 14px;
+    }
+
+    .sidebar-brand p {
+        font-size: 9px;
+    }
+
+    /* Navigasi kembali vertikal */
+    .sidebar-nav {
+        display: flex;
+        flex-direction: column;
+        padding: 15px 14px !important;
+        overflow-x: visible;
+        overflow-y: auto;
+    }
+
+    .sidebar-section-title {
+        display: block;
+        margin: 12px 0 8px;
+    }
+
+    .sidebar-link {
+        width: 100%;
+        flex: none;
+        white-space: normal;
+        padding: 11px 12px;
+        font-size: 12px;
+        background: transparent;
+    }
+
+    .sidebar-link.active {
+        box-shadow: inset 3px 0 0 #18C3D8;
+    }
+
+    .sidebar-bottom {
+        display: block;
+    }
+
+    /* Tombol hamburger muncul */
+    .mobile-menu-button {
+        display: flex;
+    }
+
+    .topbar {
+        justify-content: flex-start;
+        gap: 12px;
+    }
+
+    .topbar-title {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .topbar-title h1 {
+        font-size: 18px;
+    }
+
+    /* Overlay */
+    .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .45);
+        z-index: 1000;
+
+        opacity: 0;
+        visibility: hidden;
+        transition: .3s ease;
+    }
+
+    .sidebar-overlay.show {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Konten HP */
+    .main-area {
+        margin-left: 0 !important;
+        width: 100% !important;
+        padding: 21px 15px 30px !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .topbar-title {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        flex-shrink: 0;
+    }
+
+    .mobile-menu-button {
+        display: flex;
+    }
+}
+
+/* =====================================
+   SIDEBAR - SEMBUNYIKAN SCROLLBAR
+   ===================================== */
+
+.warga-sidebar {
+    overflow: hidden !important;
+}
+
+.sidebar-nav {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    /* Firefox */
+    scrollbar-width: none !important;
+
+    /* Internet Explorer dan Edge lama */
+    -ms-overflow-style: none !important;
+}
+
+/* Chrome, Edge, dan Safari */
+.sidebar-nav::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+/* =====================================
+   GRADASI IKON DASHBOARD
+===================================== */
+
+/* Gradasi warna simbol */
+.gradient-icon {
+    background: linear-gradient(
+        135deg,
+        #0B354D 0%,
+        #147F91 50%,
+        #17B8C8 100%
+    );
+
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+
+    display: inline-block;
+}
+
+/* Kotak ikon */
+.stat-icon,
+.service-icon {
+    background: linear-gradient(
+        145deg,
+        #EDF9FC 0%,
+        #D9EFF7 100%
+    );
+
+    border: 1px solid #D5EBF3;
+    border-radius: 16px;
+}
+
+/* Ukuran ikon statistik */
+.stat-icon .gradient-icon {
+    font-size: 23px;
+}
+
+/* Ukuran ikon layanan */
+.service-icon .gradient-icon {
+    font-size: 23px;
+}
+
+/* Ikon sidebar */
+.sidebar-icon .gradient-icon {
+    font-size: 17px;
+}
+
+/* Ikon notifikasi */
+.notification-button .gradient-icon {
+    font-size: 19px;
+}
+
+/* Ikon setoran */
+.setoran-icon .gradient-icon {
+    font-size: 22px;
+}
+
+/* Ikon notifikasi kecil */
+.notification-icon .gradient-icon {
     font-size: 15px;
 }
-
-.setoran-terbaru-info p {
-    margin: 0;
-    color: #81908b;
-    font-size: 12px;
-}
-
-.setoran-terbaru-status {
-    text-align: right;
-}
-
-.status-dashboard {
-    display: inline-block;
-    padding: 7px 11px;
-    border-radius: 20px;
-    font-size: 11px;
-    font-weight: 700;
-}
-
-.status-dashboard-menunggu {
-    background: #fff7df;
-    color: #a46b00;
-}
-
-.status-dashboard-diterima {
-    background: #e7f7ef;
-    color: #16804f;
-}
-
-.status-dashboard-ditolak {
-    background: #fdecec;
-    color: #c0392b;
-}
-
-.setoran-terbaru-status strong {
-    display: block;
-    margin-top: 6px;
-    color: #174c43;
-    font-size: 14px;
-}
-
-.setoran-terbaru-status small {
-    display: block;
-    max-width: 250px;
-    margin-top: 6px;
-    color: #81908b;
-    font-size: 11px;
-}
-
-.setoran-terbaru-empty {
-    background: #ffffff;
-    border: 1px dashed #d6e4e0;
-    border-radius: 16px;
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-
-.setoran-terbaru-empty > span {
-    font-size: 25px;
-}
-
-.setoran-terbaru-empty strong {
-    color: #174c43;
-    font-size: 14px;
-}
-
-.setoran-terbaru-empty p {
-    margin: 4px 0 0;
-    color: #81908b;
-    font-size: 12px;
-}
-
-.setoran-terbaru-empty a {
-    margin-left: auto;
-    color: #0f766e;
-    text-decoration: none;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-@media (max-width: 600px) {
-
-    .setoran-terbaru-heading {
-        align-items: flex-start;
-    }
-
-    .setoran-terbaru-card {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .setoran-terbaru-status {
-        text-align: left;
-    }
-
-    .setoran-terbaru-empty {
-        flex-wrap: wrap;
-    }
-
-    .setoran-terbaru-empty a {
-        width: 100%;
-        margin-left: 0;
-        margin-top: 5px;
-    }
-
-}
-
-/* Preview Notifikasi */
-.warga-notifikasi-preview {
-    background: #ffffff;
-    border: 1px solid #e5eeea;
-    border-radius: 16px;
-    margin-top: 24px;
-    overflow: hidden;
-}
-
-.warga-notifikasi-preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 18px 20px;
-    border-bottom: 1px solid #edf1ef;
-}
-
-.warga-notifikasi-preview-header h3 {
-    margin: 0;
-    color: #183b35;
-    font-size: 16px;
-}
-
-.warga-notifikasi-preview-header a {
-    color: #0f766e;
-    font-size: 12px;
-    font-weight: 600;
-    text-decoration: none;
-}
-
-.warga-notifikasi-preview-item {
-    display: flex;
-    gap: 12px;
-    padding: 16px 20px;
-    border-bottom: 1px solid #edf1ef;
-}
-
-.warga-notifikasi-preview-item:last-child {
-    border-bottom: none;
-}
-
-.warga-notifikasi-preview-item.belum-dibaca {
-    background: #f5fbf8;
-}
-
-.warga-notifikasi-preview-item.belum-dibaca
-.warga-notifikasi-preview-title {
-    font-weight: 700;
-}
-
-.warga-notifikasi-preview-item.belum-dibaca
-.warga-notifikasi-preview-icon {
-    background: #d8f2e9;
-}
-
-.warga-notifikasi-preview-item.belum-dibaca::after {
-    content: "";
-    width: 7px;
-    height: 7px;
-    min-width: 7px;
-    border-radius: 50%;
-    background: #159b83;
-    align-self: flex-start;
-    margin-top: 8px;
-}
-
-.warga-notifikasi-preview-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    border-radius: 10px;
-    background: #e3f5ee;
-    color: #0f766e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-}
-
-.warga-notifikasi-preview-detail {
-    min-width: 0;
-    flex: 1;
-}
-
-.warga-notifikasi-preview-title {
-    color: #183b35;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.warga-notifikasi-preview-message {
-    color: #71817d;
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.warga-notifikasi-preview-time {
-    color: #98a49f;
-    font-size: 10px;
-    margin-top: 5px;
-}
-
-.warga-notifikasi-preview-empty {
-    padding: 25px 20px;
-    text-align: center;
-    color: #899691;
-    font-size: 12px;
-}
-
-
-
     </style>
 </head>
 
 <body>
 
-    <div class="dashboard-warga">
+<div class="dashboard-layout">
 
-        <header class="warga-navbar">
-            <h2>♻ Bank Sampah Digital</h2>
+    <!-- =================================
+         SIDEBAR
+    ================================== -->
 
-           <div class="warga-profile-menu">
-    <span>
-        Halo, <?= htmlspecialchars($_SESSION['nama'], ENT_QUOTES, 'UTF-8') ?>!
-    </span>
+<aside class="warga-sidebar" id="wargaSidebar">
 
-    <a href="profil.php" class="btn-profil">
-        Profil
-    </a>
+   <div class="sidebar-brand">
+    <div class="sidebar-brand-top">
+        <div class="sidebar-logo">
+            <img src="../assets/images/logo-tps3r.png" alt="Logo TPS 3R">
+        </div>
 
-    <a href="../auth/logout.php" class="btn-logout">
-        Logout
-    </a>
+        <div>
+            <h2>Bank Sampah TPS 3R Kopling Berjaya</h2>
+            <p>TPS 3R KELURAHAN PULAU KAROMAH</p>
+        </div>
+    </div>
 </div>
-        </header>
 
-        <main class="warga-content">
+    <nav class="sidebar-nav">
 
-            <!-- Heading Dashboard -->
-            <div class="warga-heading">
+        <div class="sidebar-section-title">
+            Utama
+        </div>
 
-                <div class="warga-heading-text">
-                    <h1>Dashboard Warga</h1>
-                    <p>Selamat datang! Mari bersama menjaga lingkungan tetap bersih.</p>
+        <a href="dashboard.php" class="sidebar-link active">
+            <span class="sidebar-icon">🏠</span>
+            <span>Dashboard</span>
+        </a>
+
+        <div class="sidebar-section-title">
+            Layanan Warga
+        </div>
+
+        <a href="qr_saya.php" class="sidebar-link">
+            <span class="sidebar-icon">▣</span>
+            <span>QR Code Saya</span>
+        </a>
+
+        <a href="ajukan_setoran.php" class="sidebar-link">
+            <span class="sidebar-icon">♻️</span>
+            <span>Ajukan Setoran</span>
+        </a>
+
+        <a href="riwayat_setoran.php" class="sidebar-link">
+            <span class="sidebar-icon">📦</span>
+            <span>Riwayat Setoran</span>
+        </a>
+
+        <a href="riwayat_tabungan.php" class="sidebar-link">
+            <span class="sidebar-icon">💰</span>
+            <span>Riwayat Tabungan</span>
+        </a>
+
+        <a href="ajukan_penarikan.php" class="sidebar-link">
+            <span class="sidebar-icon">💸</span>
+            <span>Penarikan Tabungan</span>
+        </a>
+
+        <a href="riwayat_penarikan.php" class="sidebar-link">
+            <span class="sidebar-icon">📋</span>
+            <span>Riwayat Penarikan</span>
+        </a>
+
+        <a href="notifikasi.php" class="sidebar-link">
+            <span class="sidebar-icon">🔔</span>
+            <span>Notifikasi</span>
+
+            <?php if ($jumlah_notifikasi > 0): ?>
+                <span class="sidebar-badge">
+                    <?= $jumlah_notifikasi > 99 ? '99+' : $jumlah_notifikasi; ?>
+                </span>
+            <?php endif; ?>
+        </a>
+
+        <div class="sidebar-section-title">
+            Akun
+        </div>
+
+        <a href="profil.php" class="sidebar-link">
+            <span class="sidebar-icon">⚙️</span>
+            <span>Profil Saya</span>
+        </a>
+         <a href="aktivitas.php" class="sidebar-link">
+            <span class="sidebar-icon">🕘</span>
+            <span>Aktivitas Saya</span>
+        </a>
+        <a href="../auth/logout.php" class="sidebar-link sidebar-logout">
+            <span class="sidebar-icon">🚪</span>
+            <span>Logout</span>
+        </a>
+
+    </nav>
+
+</aside>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- =================================
+         KONTEN DASHBOARD
+    ================================== -->
+
+    <main class="main-area">
+
+        <!-- TOPBAR -->
+<header class="topbar">
+
+    <div class="topbar-title">
+        <h1>Dashboard Warga</h1>
+        <p>Selamat datang kembali! Pantau aktivitas bank sampah kamu.</p>
+    </div>
+
+    <div class="topbar-actions">
+        <!-- NOTIFIKASI -->
+        <a href="notifikasi.php"
+           class="notification-button"
+           title="Notifikasi"
+           aria-label="Notifikasi">
+
+            🔔
+
+            <?php if ($jumlah_notifikasi > 0): ?>
+                <span class="notification-badge">
+                    <?= $jumlah_notifikasi > 99 ? '99+' : $jumlah_notifikasi; ?>
+                </span>
+            <?php endif; ?>
+
+        </a>
+                <!-- HAMBURGER MENU -->
+        <button type="button" class="mobile-menu-button"
+                id="mobileMenuButton"
+                aria-label="Buka menu"
+                aria-expanded="false">
+            ☰
+        </button>
+
+        <!-- PROFIL -->
+        <a href="profil.php" class="topbar-profile">
+            <div class="topbar-avatar">
+                <?= strtoupper(substr($_SESSION['nama'] ?? 'W', 0, 1)); ?>
+            </div>
+            <span><?= $nama_warga; ?></span>
+        </a>
+
+    </div>
+
+</header>
+
+
+        <!-- WELCOME BANNER -->
+
+        <section class="welcome-banner">
+
+            <div class="welcome-text">
+                <span>♻ BANK SAMPAH DIGITAL</span>
+
+                <h2>Halo, <?= $nama_warga; ?>! 👋</h2>
+
+                <p>
+                    Terima kasih sudah menjadi bagian dari gerakan peduli lingkungan.
+                    Yuk, kelola sampah menjadi sesuatu yang lebih bermanfaat!
+                </p>
+            </div>
+        </section>
+
+
+        <!-- STATISTIK -->
+
+        <div class="section-heading">
+            <h2>Ringkasan Aktivitas</h2>
+            <p>Informasi tabungan dan aktivitas bank sampah kamu.</p>
+        </div>
+
+        <section class="stats-grid">
+
+            <div class="stat-card">
+                <div class="stat-icon saldo">
+    <i class="fa-solid fa-wallet gradient-icon"></i>
+</div>
+
+                <div class="stat-info">
+                    <span>Saldo Tabungan</span>
+                    <strong>
+                        Rp <?= number_format($saldo, 0, ',', '.'); ?>
+                    </strong>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon sampah">
+                <i class="fa-solid fa-recycle gradient-icon"></i>
+                </div>
+                <div class="stat-info">
+                    <span>Total Sampah Diterima</span>
+                    <strong>
+                        <?= number_format($total_berat, 2, ',', '.'); ?> Kg
+                    </strong>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon transaksi">
+                <i class="fa-solid fa-chart-column gradient-icon"></i>
+                </div>
+                <div class="stat-info">
+                    <span>Total Transaksi</span>
+                    <strong>
+                        <?= number_format($total_transaksi, 0, ',', '.'); ?>
+                    </strong>
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- SETORAN DAN NOTIFIKASI -->
+
+        <section class="content-grid">
+
+            <!-- SETORAN TERBARU -->
+
+            <div class="panel">
+
+                <div class="panel-header">
+                    <h3>Setoran Terbaru</h3>
+
+                    <a href="riwayat_setoran.php">
+                        Lihat Semua →
+                    </a>
                 </div>
 
-                <!-- Ikon Notifikasi -->
-                <a href="notifikasi.php"
-                   class="warga-notification-link"
-                   title="Lihat Notifikasi"
-                   aria-label="Lihat Notifikasi">
+                <div class="panel-body">
 
-                    <span class="warga-notification-icon">🔔</span>
+                    <?php if ($setoran_terbaru): ?>
 
-                    <?php if ($jumlah_notifikasi > 0): ?>
-                        <span class="warga-notification-badge">
-                            <?= $jumlah_notifikasi > 99 ? '99+' : $jumlah_notifikasi ?>
-                        </span>
+                        <div class="setoran-info">
+                            <div class="setoran-detail">
+                                <strong>
+                                    <?= htmlspecialchars($setoran_terbaru['nama_kategori'], ENT_QUOTES, 'UTF-8'); ?>
+                                </strong>
+
+                                <span>
+                                    <?= tanggalIndonesia($setoran_terbaru['tanggal_setor']); ?>
+                                    ·
+                                    <?= number_format((float) $setoran_terbaru['berat_kg'], 2, ',', '.'); ?>
+                                    Kg
+                                </span>
+                            </div>
+
+                        </div>
+
+                        <div class="setoran-status">
+
+                            <?php if ($setoran_terbaru['status'] === 'menunggu'): ?>
+
+                                <span class="status-badge status-menunggu">
+                                    ● Menunggu Verifikasi
+                                </span>
+
+                            <?php elseif ($setoran_terbaru['status'] === 'diterima'): ?>
+
+                                <span class="status-badge status-diterima">
+                                    ✓ Diterima
+                                </span>
+
+                                <strong class="setoran-price">
+                                    Rp <?= number_format((float) $setoran_terbaru['total_harga'], 0, ',', '.'); ?>
+                                </strong>
+
+                            <?php elseif ($setoran_terbaru['status'] === 'ditolak'): ?>
+
+                                <span class="status-badge status-ditolak">
+                                    ✕ Ditolak
+                                </span>
+
+                                <?php if (!empty($setoran_terbaru['alasan_penolakan'])): ?>
+                                    <small class="setoran-reason">
+                                        Alasan:
+                                        <?= htmlspecialchars($setoran_terbaru['alasan_penolakan'], ENT_QUOTES, 'UTF-8'); ?>
+                                    </small>
+                                <?php endif; ?>
+
+                            <?php endif; ?>
+
+                        </div>
+
+                    <?php else: ?>
+
+                        <div class="empty-state">
+                            <div class="empty-icon">♻️</div>
+
+                            <strong>Belum Ada Setoran</strong>
+
+                            <p>
+                                Kamu belum mengajukan setoran sampah.
+                            </p>
+
+                            <a href="ajukan_setoran.php" class="small-action">
+                                Ajukan Setoran →
+                            </a>
+                        </div>
+
                     <?php endif; ?>
 
+                </div>
+
+            </div>
+
+
+            <!-- NOTIFIKASI TERBARU -->
+
+            <div class="panel">
+
+                <div class="panel-header">
+                    <h3>🔔 Notifikasi Terbaru</h3>
+
+                    <a href="notifikasi.php">
+                        Lihat Semua →
+                    </a>
+                </div>
+
+                <div class="panel-body">
+
+                    <?php if (count($notifikasi) > 0): ?>
+
+                        <?php foreach ($notifikasi as $notif): ?>
+
+                            <div class="notification-item <?= $notif['dibaca'] == 0 ? 'unread' : ''; ?>">
+
+                                <div class="notification-icon">
+                                    <?php
+                                    if ($notif['tipe'] === 'sukses') {
+                                        echo '✓';
+                                    } elseif ($notif['tipe'] === 'peringatan') {
+                                        echo '!';
+                                    } else {
+                                        echo 'i';
+                                    }
+                                    ?>
+                                </div>
+
+                                <div class="notification-detail">
+
+                                    <strong>
+                                        <?= htmlspecialchars($notif['judul'], ENT_QUOTES, 'UTF-8'); ?>
+                                    </strong>
+
+                                    <p>
+                                        <?= htmlspecialchars($notif['pesan'], ENT_QUOTES, 'UTF-8'); ?>
+                                    </p>
+
+                                    <small>
+                                        <?= date('d/m/Y H:i', strtotime($notif['tanggal_dibuat'])); ?>
+                                    </small>
+
+                                </div>
+
+                            </div>
+
+                        <?php endforeach; ?>
+
+                    <?php else: ?>
+
+                        <div class="notification-empty">
+                            Belum ada notifikasi terbaru.
+                        </div>
+
+                    <?php endif; ?>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- LAYANAN BANK SAMPAH -->
+
+        <section class="services-section">
+
+            <div class="section-heading">
+                <h2>Layanan Bank Sampah</h2>
+                <p>Pilih layanan yang ingin kamu gunakan.</p>
+            </div>
+
+            <div class="services-grid">
+
+                <a href="qr_saya.php" class="service-card qr-service">
+                    <div class="service-icon">▣</div>
+                    <h3>QR Code Saya</h3>
+                    <p>Lihat QR Code keanggotaan untuk proses pengangkutan sampah oleh petugas.</p>
+                    <span>Lihat QR Code →</span>
+                </a>
+
+                <a href="ajukan_setoran.php" class="service-card">
+                    <div class="service-icon">♻️</div>
+                    <h3>Ajukan Setoran</h3>
+                    <p>Ajukan penyetoran sampah dan dapatkan saldo tabungan.</p>
+                    <span>Mulai Setoran →</span>
+                </a>
+
+                <a href="riwayat_setoran.php" class="service-card">
+                    <div class="service-icon">📦</div>
+                    <h3>Riwayat Setoran</h3>
+                    <p>Lihat daftar pengajuan dan status setoran sampah.</p>
+                    <span>Lihat Riwayat →</span>
+                </a>
+
+                <a href="riwayat_tabungan.php" class="service-card">
+                    <div class="service-icon">💰</div>
+                    <h3>Riwayat Tabungan</h3>
+                    <p>Pantau transaksi masuk dan keluar saldo tabungan.</p>
+                    <span>Lihat Transaksi →</span>
+                </a>
+
+                <a href="ajukan_penarikan.php" class="service-card">
+                    <div class="service-icon">💸</div>
+                    <h3>Penarikan Tabungan</h3>
+                    <p>Ajukan pencairan saldo tabungan yang kamu miliki.</p>
+                    <span>Ajukan Penarikan →</span>
+                </a>
+
+                <a href="riwayat_penarikan.php" class="service-card">
+                    <div class="service-icon">📋</div>
+                    <h3>Riwayat Penarikan</h3>
+                    <p>Lihat status pengajuan penarikan saldo tabungan.</p>
+                    <span>Lihat Riwayat →</span>
                 </a>
 
             </div>
 
-
-            <!-- Statistik Warga -->
-            <div class="warga-cards">
-
-                <div class="warga-card">
-                    <h3>Saldo Tabungan</h3>
-
-                    <p>
-                        Rp <?php echo number_format(
-                            $saldo,
-                            0,
-                            ',',
-                            '.'
-                        ); ?>
-                    </p>
-                </div>
-
-                <div class="warga-card">
-                    <h3>Total Setoran</h3>
-
-                    <p>
-                        <?php echo number_format(
-                            $total_berat,
-                            2,
-                            ',',
-                            '.'
-                        ); ?> Kg
-                    </p>
-                </div>
-
-                <div class="warga-card">
-                    <h3>Transaksi</h3>
-
-                    <p>
-                        <?php echo number_format(
-                            $total_transaksi,
-                            0,
-                            ',',
-                            '.'
-                        ); ?>
-                    </p>
-                </div>
-
-            </div>
+        </section>
 
 
-            <div class="warga-notifikasi-preview">
+        <footer class="dashboard-footer">
+            © <?= date('Y'); ?> Bank Sampah Digital. Bersama Jaga Lingkungan.
+        </footer>
 
-    <div class="warga-notifikasi-preview-header">
-        <h3>Notifikasi Terbaru</h3>
-
-        <a href="notifikasi.php">
-            Lihat Semua →
-        </a>
-    </div>
-
-    <?php if (mysqli_num_rows($query_notifikasi_terbaru) > 0): ?>
-
-        <?php while ($notif = mysqli_fetch_assoc($query_notifikasi_terbaru)): ?>
-
-            <div class="warga-notifikasi-preview-item <?= $notif['dibaca'] == 0 ? 'belum-dibaca' : '' ?>">
-
-                <div class="warga-notifikasi-preview-icon">
-                    <?php
-                    if ($notif['tipe'] === 'sukses') {
-                        echo '✓';
-                    } elseif ($notif['tipe'] === 'peringatan') {
-                        echo '!';
-                    } else {
-                        echo 'ℹ';
-                    }
-                    ?>
-                </div>
-
-                <div class="warga-notifikasi-preview-detail">
-
-                    <div class="warga-notifikasi-preview-title">
-                        <?= htmlspecialchars($notif['judul']) ?>
-                    </div>
-
-                    <div class="warga-notifikasi-preview-message">
-                        <?= htmlspecialchars($notif['pesan']) ?>
-                    </div>
-
-                    <div class="warga-notifikasi-preview-time">
-                        <?= date('d M Y, H:i', strtotime($notif['tanggal_dibuat'])) ?>
-                    </div>
-
-                </div>
-
-            </div>
-
-        <?php endwhile; ?>
-
-    <?php else: ?>
-
-        <div class="warga-notifikasi-preview-empty">
-            Belum ada notifikasi terbaru.
-        </div>
-
-    <?php endif; ?>
+    </main>
 
 </div>
+<script>
+const menuButton = document.getElementById('mobileMenuButton');
+const sidebar = document.getElementById('wargaSidebar');
+const overlay = document.getElementById('sidebarOverlay');
 
-            <!-- Setoran Terbaru -->
-<section class="setoran-terbaru-section">
+function toggleSidebar() {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show');
 
-    <div class="setoran-terbaru-heading">
-        <div>
-            <h2>Setoran Terbaru</h2>
-            <p>Informasi pengajuan setoran terakhir kamu.</p>
-        </div>
+    const isOpen = sidebar.classList.contains('open');
 
-        <a href="riwayat_setoran.php">
-            Lihat Semua →
-        </a>
-    </div>
+    menuButton.innerHTML = isOpen ? '✕' : '☰';
+    menuButton.setAttribute('aria-expanded', isOpen);
+}
 
-    <?php if ($setoran_terbaru): ?>
+menuButton.addEventListener('click', toggleSidebar);
 
-        <div class="setoran-terbaru-card">
+overlay.addEventListener('click', toggleSidebar);
 
-            <div class="setoran-terbaru-info">
-
-                <div class="setoran-terbaru-icon">
-                    ♻️
-                </div>
-
-                <div>
-                    <h3>
-                        <?php echo htmlspecialchars(
-                            $setoran_terbaru['nama_kategori']
-                        ); ?>
-                    </h3>
-
-                    <p>
-                        <?php echo date(
-                            'd/m/Y',
-                            strtotime($setoran_terbaru['tanggal_setor'])
-                        ); ?>
-
-                        ·
-
-                        <?php echo number_format(
-                            (float) $setoran_terbaru['berat_kg'],
-                            2,
-                            ',',
-                            '.'
-                        ); ?>
-                        Kg
-                    </p>
-                </div>
-
-            </div>
-
-
-            <div class="setoran-terbaru-status">
-
-                <?php if ($setoran_terbaru['status'] === 'menunggu'): ?>
-
-                    <span class="status-dashboard status-dashboard-menunggu">
-                        ● Menunggu Verifikasi
-                    </span>
-
-                <?php elseif ($setoran_terbaru['status'] === 'diterima'): ?>
-
-                    <div>
-                        <span class="status-dashboard status-dashboard-diterima">
-                            ✓ Diterima
-                        </span>
-
-                        <strong>
-                            Rp <?php echo number_format(
-                                (float) $setoran_terbaru['total_harga'],
-                                0,
-                                ',',
-                                '.'
-                            ); ?>
-                        </strong>
-                    </div>
-
-                <?php elseif ($setoran_terbaru['status'] === 'ditolak'): ?>
-
-                    <div>
-                        <span class="status-dashboard status-dashboard-ditolak">
-                            ✕ Ditolak
-                        </span>
-
-                        <?php if (!empty($setoran_terbaru['alasan_penolakan'])): ?>
-
-                            <small>
-                                <?php echo htmlspecialchars(
-                                    $setoran_terbaru['alasan_penolakan']
-                                ); ?>
-                            </small>
-
-                        <?php endif; ?>
-
-                    </div>
-
-                <?php endif; ?>
-
-            </div>
-
-        </div>
-
-    <?php else: ?>
-
-        <div class="setoran-terbaru-empty">
-            <span>♻️</span>
-
-            <div>
-                <strong>Belum ada setoran</strong>
-
-                <p>
-                    Kamu belum mengajukan setoran sampah.
-                </p>
-            </div>
-
-            <a href="ajukan_setoran.php">
-                Ajukan Setoran →
-            </a>
-        </div>
-
-    <?php endif; ?>
-
-</section>
-
-            <!-- Menu Layanan -->
-            <section class="warga-menu-section">
-
-                <div class="warga-menu-heading">
-                    <h2>Layanan Bank Sampah</h2>
-                    <p>Pilih layanan yang ingin kamu gunakan.</p>
-                </div>
-
-                <div class="warga-menu-container">
-
-                    <a href="ajukan_setoran.php" class="warga-menu-card">
-                        <div class="warga-menu-icon">♻️</div>
-                        <h3>Ajukan Setoran</h3>
-                        <p>Ajukan penyetoran sampah dan dapatkan saldo tabungan.</p>
-                        <span>Mulai Setoran →</span>
-                    </a>
-
-                    <a href="riwayat_setoran.php" class="warga-menu-card">
-                        <div class="warga-menu-icon">📦</div>
-                        <h3>Riwayat Setoran</h3>
-                        <p>Lihat daftar pengajuan dan status setoran sampah.</p>
-                        <span>Lihat Riwayat →</span>
-                    </a>
-
-                    <a href="riwayat_tabungan.php" class="warga-menu-card">
-                        <div class="warga-menu-icon">💰</div>
-                        <h3>Riwayat Tabungan</h3>
-                        <p>Pantau transaksi masuk dan keluar saldo tabungan.</p>
-                        <span>Lihat Transaksi →</span>
-                    </a>
-
-                    <a href="ajukan_penarikan.php" class="warga-menu-card">
-                        <div class="warga-menu-icon">💸</div>
-                        <h3>Penarikan Tabungan</h3>
-                        <p>Ajukan pencairan saldo tabungan yang kamu miliki.</p>
-                        <span>Ajukan Penarikan →</span>
-                    </a>
-
-                    <a href="riwayat_penarikan.php" class="warga-menu-card">
-                        <div class="warga-menu-icon">📋</div>
-                        <h3>Riwayat Penarikan</h3>
-                        <p>Lihat status pengajuan penarikan saldo tabungan.</p>
-                        <span>Lihat Riwayat →</span>
-                    </a>
-
-                </div>
-
-            </section>
-
-        </main>
-
-    </div>
-
+// Tutup menu setelah memilih halaman
+sidebar.querySelectorAll('.sidebar-link').forEach(link => {
+    link.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('show');
+        menuButton.innerHTML = '☰';
+        menuButton.setAttribute('aria-expanded', 'false');
+    });
+});
+</script>
 </body>
 </html>
