@@ -147,40 +147,36 @@ body {
     overflow-x: hidden;
     background: #f4f9f8;
 }
-
 /* ========================================
-   SIDEBAR DESKTOP
+   SIDEBAR - MENGIKUTI STYLE.CSS UTAMA
 ======================================== */
 
 .admin-sidebar {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 280px !important;
-    height: 100vh !important;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
     z-index: 1001;
-    overflow-y: auto;
 }
 
 /* ========================================
-   KONTEN UTAMA DESKTOP
+   KONTEN UTAMA
 ======================================== */
-
 .admin-main {
-    display: block !important;
+    display: block;
     position: relative;
-    margin-left: 280px !important;
-    width: auto !important;
+    margin-left: 280px;
     min-width: 0;
     min-height: 100vh;
     background: #f4f9f8;
+    box-sizing: border-box;
 }
 
 .admin-content {
     width: 100%;
     max-width: none;
     margin: 0;
-    padding: 35px 30px; /* sebelumnya 42px 50px */
+    padding: 35px 30px;
     box-sizing: border-box;
 }
 
@@ -372,23 +368,23 @@ body {
         overflow-x: hidden;
     }
 
-    .admin-sidebar {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 280px !important;
-        max-width: 85vw !important;
-        height: 100vh !important;
-        z-index: 1001 !important;
-        transform: translateX(-100%) !important;
-        transition: transform .3s ease !important;
-        overflow-y: auto !important;
-    }
+  .admin-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 250px !important;
+    max-width: 85vw !important;
+    height: 100vh !important;
+    z-index: 1001 !important;
+    transform: translateX(-100%) !important;
+    transition: transform .3s ease !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
 
-    .admin-sidebar.open {
-        transform: translateX(0) !important;
-    }
-
+.admin-sidebar.open {
+    transform: translateX(0) !important;
+}
     .sidebar-overlay {
         display: none !important;
     }
@@ -507,6 +503,32 @@ body {
     .sidebar-overlay {
         display: none !important;
     }
+}
+
+/* =====================================
+   SIDEBAR - SEMBUNYIKAN SCROLLBAR
+   ===================================== */
+
+.warga-sidebar {
+    overflow: hidden !important;
+}
+
+.sidebar-nav {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    /* Firefox */
+    scrollbar-width: none !important;
+
+    /* Internet Explorer dan Edge lama */
+    -ms-overflow-style: none !important;
+}
+
+/* Chrome, Edge, dan Safari */
+.sidebar-nav::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
 }
 
 
@@ -719,8 +741,6 @@ body {
                 </button>
 
             </div>
-
-        </form>
 
     </div>
 

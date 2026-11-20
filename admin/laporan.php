@@ -1185,6 +1185,200 @@ $result_riwayat = jalankanLaporan(
 
 }
 
+/* =====================================
+   TYPOGRAPHY - LAPORAN BANK SAMPAH
+===================================== */
+
+/* Font utama halaman */
+.admin-content {
+    font-family: 'Poppins', sans-serif;
+    color: #263F4A;
+    line-height: 1.6;
+    letter-spacing: 0;
+}
+
+/* JUDUL UTAMA */
+.laporan-header .admin-heading h1 {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.6px;
+    color: #0B354D;
+    margin-bottom: 8px;
+}
+
+.laporan-header .admin-heading p {
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.7;
+    color: #718995;
+}
+
+/* JUDUL FILTER */
+.laporan-filter h2 {
+    font-size: 17px;
+    font-weight: 650;
+    line-height: 1.4;
+    margin: 0 0 5px;
+    color: #0B354D;
+}
+
+.laporan-filter > p {
+    font-size: 12.5px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+/* JUDUL SETIAP BAGIAN */
+.laporan-section-heading h2 {
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.4;
+    letter-spacing: -0.3px;
+    margin: 0 0 5px;
+    color: #0B354D;
+}
+
+.laporan-section-heading p {
+    font-size: 12.5px;
+    font-weight: 400;
+    line-height: 1.7;
+    margin: 0;
+    color: #7A8E98;
+}
+
+/* KARTU STATISTIK */
+.admin-stat-card h3 {
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+    letter-spacing: 0;
+    color: #718995;
+    margin-bottom: 10px;
+}
+
+.admin-stat-card p {
+    font-size: 25px;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.5px;
+    color: #0B354D;
+}
+
+/* JUDUL GRAFIK */
+.laporan-grafik-header h3 {
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.5;
+    color: #0B354D;
+}
+
+.laporan-grafik-header p {
+    font-size: 12px;
+    line-height: 1.6;
+    color: #82939B;
+}
+
+/* LABEL FILTER */
+.laporan-filter-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #345B65;
+}
+
+.laporan-filter-group input {
+    font-size: 13px;
+    color: #345B65;
+}
+
+/* TOMBOL */
+.laporan-btn,
+.laporan-kembali,
+.btn-export-excel,
+.btn-cetak-laporan {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+/* TABEL */
+.laporan-table th {
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.5;
+    letter-spacing: 0;
+    color: #0B4650;
+}
+
+.laporan-table td {
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.7;
+    color: #536B75;
+}
+
+/* STATUS */
+.laporan-status {
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.1px;
+}
+
+/* CATATAN */
+.laporan-catatan {
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.7;
+    color: #82939B;
+}
+
+/* RESPONSIVE HP */
+@media screen and (max-width: 800px) {
+    .laporan-header .admin-heading h1 {
+        font-size: 23px;
+        letter-spacing: -0.4px;
+    }
+
+    .laporan-section-heading h2 {
+        font-size: 17px;
+    }
+
+    .admin-stat-card p {
+        font-size: 20px;
+    }
+
+    .laporan-table th,
+    .laporan-table td {
+        font-size: 11.5px;
+    }
+}
+
+/* =====================================
+   SIDEBAR - SEMBUNYIKAN SCROLLBAR
+   ===================================== */
+
+.warga-sidebar {
+    overflow: hidden !important;
+}
+
+.sidebar-nav {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    /* Firefox */
+    scrollbar-width: none !important;
+
+    /* Internet Explorer dan Edge lama */
+    -ms-overflow-style: none !important;
+}
+
+/* Chrome, Edge, dan Safari */
+.sidebar-nav::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
     </style>
 <body>
 
