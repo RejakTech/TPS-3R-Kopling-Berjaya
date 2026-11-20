@@ -36,6 +36,26 @@ if (!$data) {
     exit('Pengumuman tidak ditemukan atau belum diterbitkan.');
 }
 
+$gambar_tambahan = [];
+$gambar_stmt = mysqli_prepare(
+    $conn,
+    "SELECT nama_file FROM pengumuman_gambar WHERE pengumuman_id = ? ORDER BY urutan, id"
+);
+
+if (!$gambar_stmt) {
+    die("Gagal menyiapkan data gambar berita.");
+}
+
+mysqli_stmt_bind_param($gambar_stmt, "i", $id);
+mysqli_stmt_execute($gambar_stmt);
+$gambar_result = mysqli_stmt_get_result($gambar_stmt);
+
+while ($row = mysqli_fetch_assoc($gambar_result)) {
+    $gambar_tambahan[] = $row['nama_file'];
+}
+
+mysqli_stmt_close($gambar_stmt);
+
 $ikon = [
     'Informasi' => '📢',
     'Edukasi' => '♻️',
@@ -45,6 +65,23 @@ $ikon = [
 $gambar = !empty($data['gambar'])
     ? 'uploads/pengumuman/' . basename($data['gambar'])
     : '';
+
+$isiBagian = preg_split('/\R\s*\R/u', trim($data['isi']));
+$isiBagian = array_values(array_filter($isiBagian, function ($bagian) {
+    return trim($bagian) !== '';
+}));
+
+if (count($isiBagian) < 2 && preg_match('/\R/u', trim($data['isi']))) {
+    $isiBagian = preg_split('/\R/u', trim($data['isi']));
+    $isiBagian = array_values(array_filter($isiBagian, function ($bagian) {
+        return trim($bagian) !== '';
+    }));
+} elseif (count($isiBagian) < 2 && $gambar_tambahan) {
+    $isiBagian = preg_split('/(?<=[.!?])\s+/u', trim($data['isi']));
+    $isiBagian = array_values(array_filter($isiBagian, function ($bagian) {
+        return trim($bagian) !== '';
+    }));
+}
 ?>
 
 <!DOCTYPE html>
@@ -120,6 +157,23 @@ $gambar = !empty($data['gambar'])
             font-size: 16px;
             line-height: 1.9;
             overflow-wrap: anywhere;
+        }
+
+        .detail-body p {
+            margin: 0 0 1.15em;
+        }
+
+        .detail-inline-image {
+            margin: 24px auto;
+        }
+
+        .detail-inline-image img {
+            display: block;
+            width: 100%;
+            max-height: 360px;
+            object-fit: contain;
+            border-radius: 14px;
+            box-shadow: 0 8px 22px rgba(7, 31, 51, .1);
         }
 
         .detail-back {
@@ -236,8 +290,36 @@ body {
 
             <div class="detail-body">
                 <?php
-                echo nl2br(escapeOutput($data['isi']));
+                $jumlahBagian = count($isiBagian);
+                $jumlahGambar = count($gambar_tambahan);
+                $gambarIndex = 0;
+
+                foreach ($isiBagian as $bagianIndex => $bagian):
                 ?>
+                    <p><?php echo nl2br(escapeOutput(trim($bagian))); ?></p>
+                    <?php
+                    while (
+                        $gambarIndex < $jumlahGambar &&
+                        min(
+                            $jumlahBagian - 1,
+                            (int) floor(($gambarIndex + 1) * $jumlahBagian / ($jumlahGambar + 1))
+                        ) <= $bagianIndex
+                    ):
+                        $namaGambar = $gambar_tambahan[$gambarIndex];
+                    ?>
+                        <figure class="detail-inline-image">
+                            <img
+                                src="uploads/pengumuman/<?php echo escapeOutput(basename($namaGambar)); ?>"
+                                alt="<?php echo escapeOutput($data['judul']); ?> - gambar <?php echo $gambarIndex + 1; ?>"
+                                loading="lazy"
+                            >
+                        </figure>
+                    <?php
+                        $gambarIndex++;
+                    endwhile;
+                    ?>
+                <?php endforeach; ?>
+
             </div>
 
         </div>

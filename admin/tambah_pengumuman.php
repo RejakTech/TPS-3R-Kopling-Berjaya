@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
 }
 
 include '../config/koneksi.php';
+require_once __DIR__ . '/../config/pengumuman_gambar.php';
 
 /* ==============================
    CSRF TOKEN
@@ -55,8 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $kategori_valid = ['Informasi', 'Edukasi', 'Kegiatan'];
         $status_valid = ['draft', 'terbit'];
 
-        if ($judul === '' || mb_strlen($judul) > 150) {
-            $error = "Judul wajib diisi dan maksimal 150 karakter.";
+        if ($judul === '' || mb_strlen($judul) > 200) {
+            $error = "Judul wajib diisi dan maksimal 200 karakter.";
         } elseif (!in_array($kategori, $kategori_valid, true)) {
             $error = "Kategori pengumuman tidak valid.";
         } elseif ($isi === '') {
@@ -65,61 +66,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Status pengumuman tidak valid.";
         }
 
-        $gambar = null;
-        $file_path = null;
+        $gambar_headline = [];
+        $gambar_tambahan = [];
 
-        /* ==============================
-           UPLOAD GAMBAR
-        ============================== */
+        if ($error === '') {
+            $gambar_headline = uploadPengumumanImages(
+                $_FILES['gambar'] ?? null,
+                false,
+                $error
+            );
+        }
 
-        if ($error === '' && isset($_FILES['gambar']) &&
-            $_FILES['gambar']['error'] !== UPLOAD_ERR_NO_FILE) {
-
-            if ($_FILES['gambar']['error'] !== UPLOAD_ERR_OK) {
-                $error = "Gagal mengunggah gambar.";
-            } elseif ($_FILES['gambar']['size'] > 3 * 1024 * 1024) {
-                $error = "Ukuran gambar maksimal 3 MB.";
-            } else {
-
-                $tmp_file = $_FILES['gambar']['tmp_name'];
-
-                $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                $mime = finfo_file($finfo, $tmp_file);
-                finfo_close($finfo);
-
-                $allowed_types = [
-                    'image/jpeg' => 'jpg',
-                    'image/png'  => 'png',
-                    'image/webp' => 'webp'
-                ];
-
-                if (!isset($allowed_types[$mime])) {
-                    $error = "Format gambar harus JPG, PNG, atau WEBP.";
-                } else {
-
-                    $upload_dir = '../uploads/pengumuman/';
-
-                    if (!is_dir($upload_dir)) {
-                        mkdir($upload_dir, 0755, true);
-                    }
-
-                    if (!is_writable($upload_dir)) {
-                        $error = "Folder upload gambar tidak dapat ditulis.";
-                    } else {
-
-                        $nama_file = bin2hex(random_bytes(16))
-                            . '.' . $allowed_types[$mime];
-
-                        $file_path = $upload_dir . $nama_file;
-
-                        if (move_uploaded_file($tmp_file, $file_path)) {
-                            $gambar = $nama_file;
-                        } else {
-                            $error = "Gambar gagal disimpan.";
-                        }
-                    }
-                }
-            }
+        if ($error === '') {
+            $gambar_tambahan = uploadPengumumanImages(
+                $_FILES['gambar_tambahan'] ?? null,
+                true,
+                $error
+            );
         }
 
         /* ==============================
@@ -133,6 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tanggal_terbit = ($status === 'terbit')
                 ? date('Y-m-d H:i:s')
                 : null;
+            $gambar = $gambar_headline[0] ?? null;
 
             $sql = "
                 INSERT INTO pengumuman
@@ -164,27 +128,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $tanggal_terbit
                 );
 
-                if (mysqli_stmt_execute($stmt)) {
+                mysqli_begin_transaction($conn);
 
-                    mysqli_stmt_close($stmt);
-
-                    header("Location: pengumuman.php?pesan=berhasil");
-                    exit;
-
-                } else {
-
+                if (!mysqli_stmt_execute($stmt)) {
                     $error = "Gagal menyimpan pengumuman. Silakan coba lagi.";
+                } else {
+                    $pengumuman_id = mysqli_insert_id($conn);
+                    $gambar_stmt = mysqli_prepare(
+                        $conn,
+                        "INSERT INTO pengumuman_gambar (pengumuman_id, nama_file, urutan) VALUES (?, ?, ?)"
+                    );
+
+                    if (!$gambar_stmt) {
+                        $error = "Gagal menyiapkan penyimpanan gambar tambahan.";
+                    } else {
+                        foreach ($gambar_tambahan as $urutan => $nama_file) {
+                            $urutan++;
+                            mysqli_stmt_bind_param(
+                                $gambar_stmt,
+                                "isi",
+                                $pengumuman_id,
+                                $nama_file,
+                                $urutan
+                            );
+
+                            if (!mysqli_stmt_execute($gambar_stmt)) {
+                                $error = "Gagal menyimpan gambar tambahan.";
+                                break;
+                            }
+                        }
+
+                        mysqli_stmt_close($gambar_stmt);
+                    }
                 }
 
                 mysqli_stmt_close($stmt);
+
+                if ($error === '' && mysqli_commit($conn)) {
+                    header("Location: pengumuman.php?pesan=berhasil");
+                    exit;
+                }
+
+                if ($error === '') {
+                    $error = "Gagal menyelesaikan penyimpanan pengumuman.";
+                }
+
+                mysqli_rollback($conn);
 
             } else {
                 $error = "Gagal menyiapkan penyimpanan data.";
             }
 
-            // Hapus gambar jika penyimpanan database gagal.
-            if ($error !== '' && $file_path && file_exists($file_path)) {
-                unlink($file_path);
+            if ($error !== '') {
+                hapusFileGambarPengumuman(
+                    array_merge($gambar_headline, $gambar_tambahan)
+                );
             }
         }
     }
@@ -418,6 +416,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 10px;
             margin: 15px auto 0;
             border: 1px solid #DCE7EC;
+        }
+
+        .preview-gambar-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .preview-gambar-list .preview-gambar {
+            display: block;
+            margin: 0;
         }
 
         /* =========================
@@ -940,7 +951,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 type="text"
                                 id="judul"
                                 name="judul"
-                                maxlength="150"
+                                maxlength="200"
                                 placeholder="Masukkan judul pengumuman"
                                 value="<?= e($judul) ?>"
                                 required
@@ -1029,12 +1040,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
 
 
-                        <!-- GAMBAR -->
+                        <!-- GAMBAR HEADLINE -->
 
                         <div class="form-group full">
 
                             <label for="gambar">
-                                Gambar Pengumuman
+                                Gambar Headline
                             </label>
 
                             <div class="upload-box">
@@ -1042,7 +1053,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <i class="fa-solid fa-cloud-arrow-up"></i>
 
                                 <p>
-                                    Pilih gambar untuk mempercantik pengumuman.
+                                    Gambar utama yang ditampilkan pada kartu berita dan bagian atas detail.
                                 </p>
 
                                 <input
@@ -1053,7 +1064,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 >
 
                                 <span class="form-hint">
-                                    Format JPG, PNG, WEBP. Maksimal 3 MB.
+                                    Format JPG, PNG, WEBP. Maksimal 3 MB per gambar.
                                 </span>
 
                                 <img
@@ -1062,6 +1073,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     alt="Preview gambar pengumuman"
                                 >
 
+                            </div>
+
+                        </div>
+
+                        <!-- GAMBAR ISI BERITA -->
+
+                        <div class="form-group full">
+
+                            <label for="gambarTambahan">
+                                Gambar Isi Berita
+                            </label>
+
+                            <div class="upload-box">
+                                <i class="fa-solid fa-images"></i>
+                                <p>Pilih satu atau beberapa gambar untuk galeri setelah teks isi berita.</p>
+                                <input
+                                    type="file"
+                                    id="gambarTambahan"
+                                    name="gambar_tambahan[]"
+                                    accept=".jpg,.jpeg,.png,.webp"
+                                    multiple
+                                >
+                                <span class="form-hint">
+                                    Format JPG, PNG, WEBP. Maksimal 3 MB per gambar.
+                                </span>
+                                <div id="previewGambarTambahan" class="preview-gambar-list"></div>
                             </div>
 
                         </div>
@@ -1128,6 +1165,30 @@ document.getElementById('gambar').addEventListener('change', function(event) {
 
     preview.src = URL.createObjectURL(file);
     preview.style.display = 'block';
+});
+
+document.getElementById('gambarTambahan').addEventListener('change', function(event) {
+
+    const previewList = document.getElementById('previewGambarTambahan');
+    previewList.replaceChildren();
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    const files = Array.from(event.target.files);
+
+    for (const file of files) {
+        if (!allowed.includes(file.type) || file.size > 3 * 1024 * 1024) {
+            alert('Setiap gambar harus berformat JPG, PNG, atau WEBP dan maksimal 3 MB.');
+            event.target.value = '';
+            previewList.replaceChildren();
+            return;
+        }
+
+        const image = document.createElement('img');
+        image.src = URL.createObjectURL(file);
+        image.alt = 'Preview gambar isi berita';
+        image.className = 'preview-gambar';
+        previewList.appendChild(image);
+    }
 });
 </script>
 

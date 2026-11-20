@@ -8,7 +8,16 @@ $sql_pengumuman = "
         judul,
         kategori,
         isi,
-        gambar,
+        COALESCE(
+            NULLIF(gambar, ''),
+            (
+                SELECT nama_file
+                FROM pengumuman_gambar
+                WHERE pengumuman_id = pengumuman.id
+                ORDER BY urutan, id
+                LIMIT 1
+            )
+        ) AS gambar,
         created_at
     FROM pengumuman
     WHERE status = 'terbit'

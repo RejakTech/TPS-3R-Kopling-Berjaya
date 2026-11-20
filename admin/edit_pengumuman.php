@@ -8,6 +8,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
 }
 
 include '../config/koneksi.php';
+require_once __DIR__ . '/../config/pengumuman_gambar.php';
 
 /* =========================
    CSRF TOKEN
@@ -58,6 +59,26 @@ if (!$pengumuman) {
     exit;
 }
 
+$gambar_tambahan = [];
+$gambar_stmt = mysqli_prepare(
+    $conn,
+    "SELECT id, nama_file, urutan FROM pengumuman_gambar WHERE pengumuman_id = ? ORDER BY urutan, id"
+);
+
+if (!$gambar_stmt) {
+    die("Gagal menyiapkan data gambar tambahan.");
+}
+
+mysqli_stmt_bind_param($gambar_stmt, "i", $id);
+mysqli_stmt_execute($gambar_stmt);
+$gambar_result = mysqli_stmt_get_result($gambar_stmt);
+
+while ($row = mysqli_fetch_assoc($gambar_result)) {
+    $gambar_tambahan[] = $row;
+}
+
+mysqli_stmt_close($gambar_stmt);
+
 /* =========================
    PROSES UPDATE
 ========================= */
@@ -82,94 +103,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($judul === '' || $kategori === '' || $isi === '') {
             $error = "Semua kolom wajib diisi.";
+        } elseif (mb_strlen($judul) > 200) {
+            $error = "Judul maksimal 200 karakter.";
         } elseif (!in_array($kategori, $kategori_valid, true)) {
             $error = "Kategori pengumuman tidak valid.";
         } elseif (!in_array($status, $status_valid, true)) {
             $error = "Status pengumuman tidak valid.";
         } else {
-
             $gambar_lama = $pengumuman['gambar'] ?? '';
-            $gambar_baru = $gambar_lama;
-            $file_baru = '';
+            $gambar_headline_baru = uploadPengumumanImages(
+                $_FILES['gambar'] ?? null,
+                false,
+                $error
+            );
+            $gambar_tambahan_baru = [];
 
-            /* =========================
-               VALIDASI GAMBAR
-            ========================= */
+            if ($error === '') {
+                $gambar_tambahan_baru = uploadPengumumanImages(
+                    $_FILES['gambar_tambahan'] ?? null,
+                    true,
+                    $error
+                );
+            }
 
-            if (
-                isset($_FILES['gambar']) &&
-                $_FILES['gambar']['error'] !== UPLOAD_ERR_NO_FILE
-            ) {
+            $hapus_headline = isset($_POST['hapus_gambar_headline']);
+            $gambar_baru = $gambar_headline_baru
+                ? $gambar_headline_baru[0]
+                : ($hapus_headline ? null : $gambar_lama);
 
-                if ($_FILES['gambar']['error'] !== UPLOAD_ERR_OK) {
-                    $error = "Gagal mengunggah gambar.";
-                } elseif ($_FILES['gambar']['size'] > 3 * 1024 * 1024) {
-                    $error = "Ukuran gambar maksimal 3 MB.";
-                } else {
+            $id_gambar_dihapus = [];
+            $gambar_dihapus = [];
+            $id_dipilih = $_POST['hapus_gambar_tambahan'] ?? [];
 
-                    $tmp_name = $_FILES['gambar']['tmp_name'];
+            if (!is_array($id_dipilih)) {
+                $id_dipilih = [];
+            }
 
-                    $finfo = new finfo(FILEINFO_MIME_TYPE);
-                    $mime = $finfo->file($tmp_name);
-
-                    $allowed = [
-                        'image/jpeg' => 'jpg',
-                        'image/png'  => 'png',
-                        'image/webp' => 'webp'
-                    ];
-
-                    if (!isset($allowed[$mime])) {
-                        $error = "Format gambar harus JPG, PNG, atau WEBP.";
-                    } else {
-
-                        $folder = '../uploads/pengumuman/';
-
-                        if (!is_dir($folder)) {
-                            if (!mkdir($folder, 0755, true)) {
-                                $error = "Folder penyimpanan gambar gagal dibuat.";
-                            }
-                        }
-
-                        if ($error === '') {
-
-                            $file_baru = bin2hex(random_bytes(16))
-                                . '.' . $allowed[$mime];
-
-                            $tujuan = $folder . $file_baru;
-
-                            if (!move_uploaded_file($tmp_name, $tujuan)) {
-                                $error = "Gambar gagal disimpan.";
-                            } else {
-                                $gambar_baru = $file_baru;
-                            }
-                        }
-                    }
+            foreach ($gambar_tambahan as $gambar_lama_tambahan) {
+                if (in_array((string) $gambar_lama_tambahan['id'], $id_dipilih, true)) {
+                    $id_gambar_dihapus[] = (int) $gambar_lama_tambahan['id'];
+                    $gambar_dihapus[] = $gambar_lama_tambahan['nama_file'];
                 }
             }
 
-            /* =========================
-               SIMPAN PERUBAHAN
-            ========================= */
-
             if ($error === '') {
-
                 $sql = "
                     UPDATE pengumuman
-                    SET
-                        judul = ?,
-                        kategori = ?,
-                        isi = ?,
-                        gambar = ?,
-                        status = ?
+                    SET judul = ?, kategori = ?, isi = ?, gambar = ?, status = ?
                     WHERE id = ?
                 ";
-
                 $update = mysqli_prepare($conn, $sql);
 
                 if (!$update) {
                     $error = "Gagal menyiapkan proses update.";
                 } else {
-
+                    mysqli_begin_transaction($conn);
                     mysqli_stmt_bind_param(
                         $update,
                         "sssssi",
@@ -181,43 +169,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $id
                     );
 
-                    if (mysqli_stmt_execute($update)) {
+                    if (!mysqli_stmt_execute($update)) {
+                        $error = "Pengumuman gagal diperbarui.";
+                    }
+                    mysqli_stmt_close($update);
 
-                        mysqli_stmt_close($update);
+                    if ($error === '' && $id_gambar_dihapus) {
+                        $deleteImage = mysqli_prepare(
+                            $conn,
+                            "DELETE FROM pengumuman_gambar WHERE id = ? AND pengumuman_id = ?"
+                        );
 
-                        /* Hapus gambar lama jika diganti */
-                        if (
-                            $file_baru !== '' &&
-                            $gambar_lama !== ''
-                        ) {
-                            $path_lama = '../uploads/pengumuman/'
-                                . basename($gambar_lama);
+                        if (!$deleteImage) {
+                            $error = "Gagal menyiapkan penghapusan gambar.";
+                        } else {
+                            foreach ($id_gambar_dihapus as $gambar_id) {
+                                mysqli_stmt_bind_param($deleteImage, "ii", $gambar_id, $id);
+                                if (!mysqli_stmt_execute($deleteImage)) {
+                                    $error = "Gambar tambahan gagal diperbarui.";
+                                    break;
+                                }
+                            }
+                            mysqli_stmt_close($deleteImage);
+                        }
+                    }
 
-                            if (is_file($path_lama)) {
-                                unlink($path_lama);
+                    if ($error === '' && $gambar_tambahan_baru) {
+                        $nextOrder = 0;
+                        foreach ($gambar_tambahan as $gambar_lama_tambahan) {
+                            if (!in_array((int) $gambar_lama_tambahan['id'], $id_gambar_dihapus, true)) {
+                                $nextOrder = max($nextOrder, (int) $gambar_lama_tambahan['urutan']);
                             }
                         }
+
+                        $insertImage = mysqli_prepare(
+                            $conn,
+                            "INSERT INTO pengumuman_gambar (pengumuman_id, nama_file, urutan) VALUES (?, ?, ?)"
+                        );
+
+                        if (!$insertImage) {
+                            $error = "Gagal menyiapkan penyimpanan gambar tambahan.";
+                        } else {
+                            foreach ($gambar_tambahan_baru as $nama_file) {
+                                $nextOrder++;
+                                mysqli_stmt_bind_param(
+                                    $insertImage,
+                                    "isi",
+                                    $id,
+                                    $nama_file,
+                                    $nextOrder
+                                );
+                                if (!mysqli_stmt_execute($insertImage)) {
+                                    $error = "Gagal menyimpan gambar tambahan.";
+                                    break;
+                                }
+                            }
+                            mysqli_stmt_close($insertImage);
+                        }
+                    }
+
+                    if ($error === '' && mysqli_commit($conn)) {
+                        $hapusSetelahSimpan = $gambar_dihapus;
+                        if ($gambar_headline_baru && $gambar_lama !== '') {
+                            $hapusSetelahSimpan[] = $gambar_lama;
+                        } elseif ($hapus_headline && $gambar_lama !== '') {
+                            $hapusSetelahSimpan[] = $gambar_lama;
+                        }
+                        hapusFileGambarPengumuman($hapusSetelahSimpan);
 
                         header("Location: pengumuman.php?pesan=berhasil_edit");
                         exit;
-
-                    } else {
-
-                        $error = "Pengumuman gagal diperbarui.";
-
-                        mysqli_stmt_close($update);
-
-                        /* Hapus file baru jika update gagal */
-                        if ($file_baru !== '') {
-                            $path_baru = '../uploads/pengumuman/'
-                                . basename($file_baru);
-
-                            if (is_file($path_baru)) {
-                                unlink($path_baru);
-                            }
-                        }
                     }
+
+                    if ($error === '') {
+                        $error = "Gagal menyelesaikan perubahan pengumuman.";
+                    }
+
+                    mysqli_rollback($conn);
                 }
+            }
+
+            if ($error !== '') {
+                hapusFileGambarPengumuman(
+                    array_merge($gambar_headline_baru, $gambar_tambahan_baru)
+                );
             }
         }
     }
@@ -413,13 +448,34 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
     margin-top: 12px;
 }
 
-.preview-wrapper img {
+.preview-wrapper img,
+.preview-image-list img {
     width: 190px;
     height: 135px;
     object-fit: cover;
     border-radius: 11px;
     border: 1px solid #DCE7EC;
     background: #EAF5FC;
+}
+
+.preview-image-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.preview-image-list label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #718995;
+    font-size: 11px;
+}
+
+.preview-image-list input[type="checkbox"],
+.preview-wrapper input[type="checkbox"] {
+    width: auto;
+    margin-right: 5px;
 }
 
 .preview-label {
@@ -725,7 +781,7 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
                             name="judul"
                             value="<?= e($judul_tampil) ?>"
                             placeholder="Masukkan judul pengumuman"
-                            maxlength="255"
+                            maxlength="200"
                             required
                         >
 
@@ -773,7 +829,7 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
 
                     <div class="form-group">
 
-                        <label for="gambar">Gambar Pengumuman</label>
+                        <label for="gambar">Gambar Headline</label>
 
                         <input
                             type="file"
@@ -783,8 +839,7 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
                         >
 
                         <p class="form-hint">
-                            Format JPG, PNG, atau WEBP. Maksimal 3 MB.
-                            Kosongkan jika tidak ingin mengganti gambar.
+                            Format JPG, PNG, atau WEBP. Maksimal 3 MB. Kosongkan jika tidak ingin mengganti.
                         </p>
 
                         <?php if ($gambar_tampil !== ''): ?>
@@ -801,6 +856,11 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
                                     onerror="this.style.display='none';"
                                 >
 
+                                <label class="form-hint">
+                                    <input type="checkbox" name="hapus_gambar_headline" value="1">
+                                    Hapus gambar headline saat ini
+                                </label>
+
                             </div>
 
                         <?php endif; ?>
@@ -813,6 +873,54 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
 
                             <img id="gambarPreview" src="" alt="Preview gambar baru">
 
+                        </div>
+
+                    </div>
+
+                    <div class="form-group">
+
+                        <label for="gambarTambahan">Gambar Isi Berita</label>
+
+                        <input
+                            type="file"
+                            id="gambarTambahan"
+                            name="gambar_tambahan[]"
+                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                            multiple
+                        >
+
+                        <p class="form-hint">
+                            Pilih satu atau beberapa gambar. Maksimal 3 MB per gambar; gambar akan ditambahkan ke galeri setelah teks isi berita.
+                        </p>
+
+                        <?php if ($gambar_tambahan): ?>
+                            <div class="preview-wrapper">
+                                <span class="preview-label">Gambar isi berita saat ini (centang untuk menghapus):</span>
+                                <div class="preview-image-list">
+                                    <?php foreach ($gambar_tambahan as $gambar_item): ?>
+                                        <label>
+                                            <img
+                                                src="../uploads/pengumuman/<?= e(basename($gambar_item['nama_file'])) ?>"
+                                                alt="Gambar isi berita"
+                                                onerror="this.style.display='none';"
+                                            >
+                                            <span>
+                                                <input
+                                                    type="checkbox"
+                                                    name="hapus_gambar_tambahan[]"
+                                                    value="<?= (int) $gambar_item['id'] ?>"
+                                                >
+                                                Hapus
+                                            </span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+
+                        <div class="preview-wrapper" id="previewGambarTambahan" style="display:none;">
+                            <span class="preview-label">Preview gambar baru:</span>
+                            <div class="preview-image-list" id="gambarTambahanPreview"></div>
                         </div>
 
                     </div>
@@ -895,6 +1003,32 @@ document.getElementById('gambar').addEventListener('change', function () {
 
     gambar.src = URL.createObjectURL(file);
     preview.style.display = 'block';
+});
+
+document.getElementById('gambarTambahan').addEventListener('change', function () {
+    const preview = document.getElementById('previewGambarTambahan');
+    const imageList = document.getElementById('gambarTambahanPreview');
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    const files = Array.from(this.files);
+
+    imageList.replaceChildren();
+
+    for (const file of files) {
+        if (!allowed.includes(file.type) || file.size > 3 * 1024 * 1024) {
+            alert('Setiap gambar harus berformat JPG, PNG, atau WEBP dan maksimal 3 MB.');
+            this.value = '';
+            imageList.replaceChildren();
+            preview.style.display = 'none';
+            return;
+        }
+
+        const image = document.createElement('img');
+        image.src = URL.createObjectURL(file);
+        image.alt = 'Preview gambar isi berita';
+        imageList.appendChild(image);
+    }
+
+    preview.style.display = files.length ? 'block' : 'none';
 });
 </script>
 

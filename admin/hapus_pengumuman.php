@@ -48,30 +48,62 @@ if (!$data) {
     exit;
 }
 
-// Hapus data dari database
+$gambarTambahan = [];
+$gambarStmt = mysqli_prepare(
+    $conn,
+    "SELECT nama_file FROM pengumuman_gambar WHERE pengumuman_id = ?"
+);
+
+if (!$gambarStmt) {
+    header("Location: pengumuman.php?pesan=gagal_hapus");
+    exit;
+}
+
+mysqli_stmt_bind_param($gambarStmt, "i", $id);
+mysqli_stmt_execute($gambarStmt);
+$gambarResult = mysqli_stmt_get_result($gambarStmt);
+
+while ($row = mysqli_fetch_assoc($gambarResult)) {
+    $gambarTambahan[] = $row['nama_file'];
+}
+
+mysqli_stmt_close($gambarStmt);
+
+// Hapus data dan relasi gambar dalam satu transaksi.
+$hapusGambar = mysqli_prepare(
+    $conn,
+    "DELETE FROM pengumuman_gambar WHERE pengumuman_id = ?"
+);
 $hapus = mysqli_prepare(
     $conn,
     "DELETE FROM pengumuman WHERE id = ?"
 );
 
+if (!$hapusGambar || !$hapus) {
+    if ($hapusGambar) {
+        mysqli_stmt_close($hapusGambar);
+    }
+    if ($hapus) {
+        mysqli_stmt_close($hapus);
+    }
+    header("Location: pengumuman.php?pesan=gagal_hapus");
+    exit;
+}
+
+mysqli_begin_transaction($conn);
+mysqli_stmt_bind_param($hapusGambar, "i", $id);
 mysqli_stmt_bind_param($hapus, "i", $id);
 
-if (mysqli_stmt_execute($hapus)) {
+if (mysqli_stmt_execute($hapusGambar) && mysqli_stmt_execute($hapus) && mysqli_commit($conn)) {
 
-    // Hapus gambar jika tersedia
+    $fileGambar = $gambarTambahan;
     if (!empty($data['gambar'])) {
-
-        $namaGambar = basename($data['gambar']);
-
-        $lokasiGambar = __DIR__ .
-            '/../uploads/pengumuman/' .
-            $namaGambar;
-
-        if (is_file($lokasiGambar)) {
-            unlink($lokasiGambar);
-        }
+        $fileGambar[] = $data['gambar'];
     }
+    require_once __DIR__ . '/../config/pengumuman_gambar.php';
+    hapusFileGambarPengumuman($fileGambar);
 
+    mysqli_stmt_close($hapusGambar);
     mysqli_stmt_close($hapus);
 
     header("Location: pengumuman.php?pesan=terhapus");
@@ -79,6 +111,8 @@ if (mysqli_stmt_execute($hapus)) {
 
 } else {
 
+    mysqli_rollback($conn);
+    mysqli_stmt_close($hapusGambar);
     mysqli_stmt_close($hapus);
 
     header("Location: pengumuman.php?pesan=gagal_hapus");
