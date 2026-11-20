@@ -1934,6 +1934,33 @@ mysqli_stmt_close($stmt);
         display: none !important;
     }
 }
+
+/* =====================================
+   SIDEBAR - SEMBUNYIKAN SCROLLBAR
+   ===================================== */
+
+.warga-sidebar {
+    overflow: hidden !important;
+}
+
+.sidebar-nav {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+
+    /* Firefox */
+    scrollbar-width: none !important;
+
+    /* Internet Explorer dan Edge lama */
+    -ms-overflow-style: none !important;
+}
+
+/* Chrome, Edge, dan Safari */
+.sidebar-nav::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+
 </style>
 </head>
 
