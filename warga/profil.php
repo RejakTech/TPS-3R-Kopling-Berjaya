@@ -1,7 +1,8 @@
+
 <?php
 session_start();
 
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'warga') {
     header("Location: ../auth/login.php");
     exit;
 }
@@ -19,9 +20,10 @@ $user_id = (int) $_SESSION['user_id'];
 $pesan = '';
 $tipe_pesan = '';
 
-// ===============================
+// ===================================
 // PROSES UPDATE PROFIL
-// ===============================
+// ===================================
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (
@@ -30,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ) {
         $pesan = "Token keamanan tidak valid.";
         $tipe_pesan = 'error';
+
     } else {
 
         $nama_lengkap = trim($_POST['nama_lengkap'] ?? '');
@@ -37,7 +40,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $no_hp = trim($_POST['no_hp'] ?? '');
         $alamat = trim($_POST['alamat'] ?? '');
 
-        // Validasi
         if ($nama_lengkap === '' || mb_strlen($nama_lengkap) > 100) {
             $pesan = "Nama lengkap wajib diisi dan maksimal 100 karakter.";
             $tipe_pesan = 'error';
@@ -65,20 +67,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$stmt) {
                 $pesan = "Terjadi kesalahan pada sistem.";
                 $tipe_pesan = 'error';
+
             } else {
 
                 mysqli_stmt_bind_param($stmt, "si", $email, $user_id);
                 mysqli_stmt_execute($stmt);
-                $result = mysqli_stmt_get_result($stmt);
 
-                if (mysqli_num_rows($result) > 0) {
+                $result_cek = mysqli_stmt_get_result($stmt);
+                $email_dipakai = mysqli_num_rows($result_cek) > 0;
+
+                mysqli_stmt_close($stmt);
+
+                if ($email_dipakai) {
 
                     $pesan = "Email tersebut sudah digunakan oleh akun lain.";
                     $tipe_pesan = 'error';
 
                 } else {
-
-                    mysqli_stmt_close($stmt);
 
                     // Update profil
                     $stmt_update = mysqli_prepare(
@@ -107,26 +112,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         if (mysqli_stmt_execute($stmt_update)) {
 
-                        // Update nama session
-                        $_SESSION['nama'] = $nama_lengkap;
+                            $_SESSION['nama'] = $nama_lengkap;
 
-                        // ===================================
-                        // CATAT AKTIVITAS PERUBAHAN PROFIL
-                        // ===================================
+                            // Catat aktivitas
+                            if (!catatAktivitas(
+                                $conn,
+                                'Profil Diperbarui',
+                                'Data profil akun berhasil diperbarui.'
+                            )) {
+                                error_log(
+                                    "Gagal mencatat aktivitas perubahan profil untuk user #" . $user_id
+                                );
+                            }
 
-                        if (!catatAktivitas(
-                            $conn,
-                            'Profil Diperbarui',
-                            'Data profil akun berhasil diperbarui.'
-                        )) {
-                            error_log("Gagal mencatat aktivitas perubahan profil untuk user #" . $user_id);
-                        }
+                            // Regenerasi CSRF
+                            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
-                        // Regenerasi CSRF
-                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-
-                        $pesan = "Profil berhasil diperbarui.";
-                        $tipe_pesan = 'success';
+                            $pesan = "Profil berhasil diperbarui.";
+                            $tipe_pesan = 'success';
 
                         } else {
 
@@ -137,18 +140,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_close($stmt_update);
                     }
                 }
-
-                if (isset($stmt) && $stmt) {
-                    mysqli_stmt_close($stmt);
-                }
             }
         }
     }
 }
 
-// ===============================
+// ===================================
 // AMBIL DATA PROFIL
-// ===============================
+// ===================================
+
 $stmt = mysqli_prepare(
     $conn,
     "SELECT id, nama_lengkap, username, email, no_hp, alamat, status
@@ -183,8 +183,7 @@ $no_hp = $user['no_hp'] ?? '';
 $alamat = $user['alamat'] ?? '';
 $status = $user['status'] ?? 'aktif';
 
-// Inisial nama
-$inisial = strtoupper(substr($nama_lengkap, 0, 1));
+$inisial = strtoupper(mb_substr($nama_lengkap, 0, 1));
 ?>
 
 <!DOCTYPE html>
@@ -198,164 +197,346 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
     <link rel="stylesheet" href="../assets/css/style.css">
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
+        /* =====================================
+           GLOBAL
+        ===================================== */
+
         * {
             box-sizing: border-box;
         }
 
         body {
             margin: 0;
-            background: #f5f8f7;
-            color: #172a27;
+            background: #F2F7FA;
+            font-family: 'Poppins', sans-serif;
+            color: #183B55;
         }
 
-        .profil-page {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 32px 24px 50px;
-        }
+        /* =====================================
+           SIDEBAR WARGA
+        ===================================== */
 
-        /* HEADER */
-        .profil-header {
+        .warga-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 250px;
+            height: 100vh;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 1001;
+            color: #fff;
+            background: linear-gradient(180deg, #071F33, #0B2D46);
+            border-right: 1px solid rgba(255,255,255,.08);
+        }
+
+        .sidebar-brand {
+            flex-shrink: 0;
+            padding: 24px 20px 20px;
+            border-bottom: 1px solid rgba(255,255,255,.1);
+        }
+
+        .sidebar-brand-top {
+            display: flex;
             align-items: center;
-            gap: 20px;
-            margin-bottom: 28px;
+            gap: 12px;
         }
 
-        .profil-title h1 {
-            margin: 0 0 6px;
-            font-size: 28px;
-            font-weight: 700;
-            color: #123b35;
+        .sidebar-logo {
+            width: 48px;
+            height: 48px;
+            flex-shrink: 0;
+            padding: 3px;
+            border-radius: 50%;
+            background: #fff;
+            overflow: hidden;
         }
 
-        .profil-title p {
+        .sidebar-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 50%;
+        }
+
+        .sidebar-brand-top > div:last-child {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sidebar-brand h2 {
             margin: 0;
-            color: #71817e;
-            font-size: 14px;
+            color: #fff;
+            font-size: 13px;
+            line-height: 1.5;
+            font-weight: 700;
+        }
+
+        .sidebar-brand p {
+            margin: 4px 0 0;
+            color: #AFC4D2;
+            font-size: 9px;
+            line-height: 1.5;
+            letter-spacing: .4px;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 14px 12px 20px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .sidebar-nav::-webkit-scrollbar {
+            display: none;
+            width: 0;
+            height: 0;
+        }
+
+        .sidebar-section-title {
+            margin: 13px 0 6px;
+            padding: 0 10px;
+            color: #8FA9BA;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .sidebar-link {
+            min-height: 43px;
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 10px 12px;
+            margin: 2px 0;
+            border-radius: 9px;
+            color: #D8E5ED;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            transition: .2s ease;
+        }
+
+        .sidebar-link:hover,
+        .sidebar-link.active {
+            color: #fff;
+            background: rgba(24,195,216,.17);
+        }
+
+        .sidebar-link.active {
+            box-shadow: inset 3px 0 0 #18C3D8;
+        }
+
+        .sidebar-icon {
+            width: 22px;
+            min-width: 22px;
+            text-align: center;
+            font-size: 16px;
+        }
+
+        .sidebar-logout:hover {
+            background: rgba(255,90,90,.14);
+        }
+
+        /* =====================================
+           KONTEN UTAMA
+        ===================================== */
+
+        .warga-main {
+            width: calc(100% - 250px);
+            min-height: 100vh;
+            margin-left: 250px;
+            padding: 30px 35px;
+        }
+
+        /* =====================================
+           HEADER
+        ===================================== */
+
+        .page-header-row {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .warga-heading {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .warga-heading h1 {
+            margin: 0;
+            color: #102F43;
+            font-size: 25px;
+            font-weight: 750;
+            letter-spacing: -.4px;
+        }
+
+        .warga-heading p {
+            margin: 7px 0 0;
+            color: #718493;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+
+        .mobile-menu-button {
+            display: none;
+            width: 42px;
+            height: 42px;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            background: linear-gradient(135deg, #071F33, #147F91);
+            font-size: 22px;
+            cursor: pointer;
         }
 
         .btn-kembali {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
-            text-decoration: none;
-            color: #145c52;
-            background: #ffffff;
-            border: 1px solid #dce7e4;
-            padding: 11px 16px;
+            padding: 11px 17px;
             border-radius: 10px;
-            font-size: 14px;
+            color: #fff;
+            background: linear-gradient(135deg, #071F33, #147F91);
+            text-decoration: none;
+            font-size: 11px;
             font-weight: 600;
-            transition: 0.2s;
+            white-space: nowrap;
+            box-shadow: 0 5px 13px rgba(7,31,51,.15);
+            transition: .2s ease;
         }
 
         .btn-kembali:hover {
-            background: #edf7f4;
+            transform: translateY(-2px);
+            box-shadow: 0 7px 16px rgba(7,31,51,.22);
         }
 
-        /* ALERT */
+        .sidebar-overlay {
+            display: none;
+        }
+
+        /* =====================================
+           ALERT
+        ===================================== */
+
         .profil-alert {
-            padding: 14px 16px;
-            border-radius: 10px;
+            padding: 13px 16px;
             margin-bottom: 22px;
-            font-size: 14px;
+            border-radius: 10px;
+            font-size: 12px;
             font-weight: 500;
         }
 
         .profil-alert.success {
-            background: #e9f8f1;
-            border: 1px solid #b8e6d0;
-            color: #176b4d;
+            border: 1px solid #BDE8CE;
+            color: #18794E;
+            background: #E8F7EF;
         }
 
         .profil-alert.error {
-            background: #fff0f0;
-            border: 1px solid #f1c3c3;
-            color: #a33a3a;
+            border: 1px solid #F1C3C3;
+            color: #B93838;
+            background: #FDECEC;
         }
 
-        /* LAYOUT */
+        /* =====================================
+           PROFIL GRID
+        ===================================== */
+
         .profil-grid {
             display: grid;
-            grid-template-columns: 320px 1fr;
-            gap: 24px;
+            grid-template-columns: 300px minmax(0, 1fr);
+            gap: 20px;
             align-items: start;
         }
 
-        /* CARD */
         .profil-card {
-            background: #ffffff;
-            border: 1px solid #e1eae8;
-            border-radius: 16px;
-            box-shadow: 0 4px 18px rgba(22, 57, 50, 0.04);
+            min-width: 0;
+            overflow: hidden;
+            border: 1px solid #E5EDF2;
+            border-radius: 14px;
+            background: #fff;
+            box-shadow: 0 3px 12px rgba(7,31,51,.035);
         }
 
-        .btn-aktivitas {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 11px 18px;
-            background: #f5f8f7;
-            color: #35524c;
-            border: 1px solid #d8e5e2;
-            border-radius: 9px;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.2s ease;
-        }
+        /* =====================================
+           RINGKASAN PROFIL
+        ===================================== */
 
-        .btn-aktivitas:hover {
-            background: #eaf2f0;
-            border-color: #bcd8d2;
-            color: #0f766e;
-        }
-
-        /* SIDEBAR PROFIL */
         .profil-summary {
-            padding: 30px 24px;
+            padding: 25px 22px;
             text-align: center;
         }
 
         .profil-avatar {
-            width: 82px;
-            height: 82px;
-            margin: 0 auto 16px;
-            border-radius: 50%;
-            background: #e3f3ef;
-            color: #0f766e;
+            width: 76px;
+            height: 76px;
+            margin: 0 auto 15px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 30px;
+            border: 4px solid #E6F5F7;
+            border-radius: 50%;
+            color: #fff;
+            background: linear-gradient(135deg, #071F33, #147F91);
+            font-size: 28px;
             font-weight: 700;
         }
 
         .profil-summary h2 {
-            margin: 0 0 6px;
-            font-size: 20px;
-            color: #173f38;
+            margin: 0 0 5px;
+            color: #102F43;
+            font-size: 17px;
+            font-weight: 700;
+            word-break: break-word;
         }
 
         .profil-summary .username {
-            margin: 0 0 18px;
-            color: #7b8987;
-            font-size: 14px;
+            margin: 0 0 14px;
+            color: #8293A0;
+            font-size: 11px;
         }
 
         .status-akun {
             display: inline-flex;
             align-items: center;
             gap: 7px;
-            background: #eaf8f1;
-            color: #16704e;
-            padding: 7px 13px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: #18794E;
+            background: #E6F6ED;
+            font-size: 10px;
+            font-weight: 600;
             text-transform: capitalize;
         }
 
@@ -363,18 +544,18 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
             width: 7px;
             height: 7px;
             border-radius: 50%;
-            background: #24a36f;
+            background: #24A36F;
         }
 
         .profil-info {
-            border-top: 1px solid #edf1f0;
-            margin-top: 24px;
-            padding-top: 20px;
+            margin-top: 21px;
+            padding-top: 19px;
+            border-top: 1px solid #E8EEF2;
             text-align: left;
         }
 
         .profil-info-item {
-            margin-bottom: 17px;
+            margin-bottom: 15px;
         }
 
         .profil-info-item:last-child {
@@ -383,69 +564,102 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
         .profil-info-label {
             display: block;
-            color: #8a9795;
-            font-size: 11px;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
+            color: #8293A0;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: .5px;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
         }
 
         .profil-info-value {
-            color: #29413d;
-            font-size: 13px;
+            color: #435667;
+            font-size: 11px;
+            line-height: 1.7;
             word-break: break-word;
         }
 
-        .btn-ubah-password {
+        /* =====================================
+           TOMBOL AKUN
+        ===================================== */
+
+        .profil-shortcuts {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            margin-top: 20px;
+        }
+
+        .btn-ubah-password,
+        .btn-aktivitas {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 11px 18px;
-            background: #ffffff;
-            color: #0f766e;
-            border: 1px solid #b9dcd5;
+            gap: 7px;
+            padding: 10px 13px;
             border-radius: 9px;
             text-decoration: none;
-            font-size: 14px;
+            font-size: 11px;
             font-weight: 600;
-            transition: all 0.2s ease;
+            transition: .2s ease;
+        }
+
+        .btn-ubah-password {
+            color: #147F91;
+            background: #EAF5F8;
+            border: 1px solid #C9E3E9;
         }
 
         .btn-ubah-password:hover {
-            background: #edf7f4;
-            border-color: #0f766e;
+            background: #DDF0F4;
         }
 
-        /* FORM */
+        .btn-aktivitas {
+            color: #35566B;
+            background: #F2F7FA;
+            border: 1px solid #DCE6EC;
+        }
+
+        .btn-aktivitas:hover {
+            background: #E8EFF4;
+        }
+
+        /* =====================================
+           FORM PROFIL
+        ===================================== */
+
         .profil-form-card {
-            padding: 30px;
+            padding: 25px;
         }
 
         .form-heading {
-            margin-bottom: 25px;
+            margin-bottom: 22px;
         }
 
         .form-heading h2 {
-            margin: 0 0 6px;
-            color: #173f38;
-            font-size: 20px;
+            margin: 0;
+            color: #102F43;
+            font-size: 17px;
+            font-weight: 700;
         }
 
         .form-heading p {
-            margin: 0;
-            color: #7b8987;
-            font-size: 13px;
+            margin: 7px 0 0;
+            color: #718493;
+            font-size: 11px;
+            line-height: 1.7;
         }
 
         .form-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
         }
 
         .form-group {
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
 
         .form-group.full {
@@ -454,95 +668,233 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
         .form-group label {
             margin-bottom: 8px;
-            color: #40524f;
-            font-size: 13px;
+            color: #526777;
+            font-size: 11px;
             font-weight: 600;
         }
 
         .form-group input,
         .form-group textarea {
             width: 100%;
-            border: 1px solid #d9e4e1;
-            background: #ffffff;
-            color: #243b37;
-            border-radius: 10px;
-            padding: 12px 13px;
-            font-family: inherit;
-            font-size: 14px;
+            padding: 11px 13px;
+            border: 1px solid #DCE6EC;
+            border-radius: 9px;
             outline: none;
-            transition: 0.2s;
+            color: #183B55;
+            background: #fff;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            transition: .2s ease;
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
-            border-color: #159b83;
-            box-shadow: 0 0 0 3px rgba(21, 155, 131, 0.09);
+            border-color: #159BAE;
+            box-shadow: 0 0 0 3px rgba(24,195,216,.10);
         }
 
         .form-group input[readonly] {
-            background: #f5f7f7;
-            color: #7c8987;
+            background: #F2F7FA;
+            color: #8293A0;
             cursor: not-allowed;
         }
 
         .form-group textarea {
-            resize: vertical;
             min-height: 105px;
+            resize: vertical;
         }
 
         .form-help {
             margin-top: 6px;
-            font-size: 11px;
-            color: #8a9795;
+            color: #8293A0;
+            font-size: 10px;
         }
 
         .form-actions {
             display: flex;
             justify-content: flex-end;
-            margin-top: 26px;
-            padding-top: 22px;
-            border-top: 1px solid #edf1f0;
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #E8EEF2;
         }
 
         .btn-simpan {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 11px 20px;
             border: none;
-            background: #0f766e;
-            color: white;
-            padding: 12px 22px;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 700;
+            border-radius: 9px;
+            color: #fff;
+            background: linear-gradient(135deg, #071F33, #147F91);
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
             cursor: pointer;
-            transition: 0.2s;
+            box-shadow: 0 5px 13px rgba(7,31,51,.13);
+            transition: .2s ease;
         }
 
         .btn-simpan:hover {
-            background: #0c625c;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 7px 16px rgba(7,31,51,.20);
         }
 
-        /* MOBILE */
-        @media (max-width: 800px) {
-            .profil-page {
-                padding: 24px 16px 40px;
+        /* =====================================
+           RESPONSIVE TABLET
+        ===================================== */
+
+        @media (max-width: 1000px) {
+
+            .warga-main {
+                padding: 25px 22px;
             }
 
-            .profil-header {
+            .profil-grid {
+                grid-template-columns: 260px minmax(0, 1fr);
+                gap: 15px;
+            }
+
+            .profil-form-card {
+                padding: 20px;
+            }
+
+        }
+
+        /* =====================================
+           RESPONSIVE MOBILE
+        ===================================== */
+
+        @media (max-width: 768px) {
+
+            .warga-sidebar {
+                width: 260px;
+                min-width: 260px;
+                transform: translateX(-100%);
+                transition: transform .3s ease;
+            }
+
+            .warga-sidebar.open {
+                transform: translateX(0);
+            }
+
+            .sidebar-overlay {
+                display: block;
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                background: rgba(0,0,0,.45);
+                opacity: 0;
+                visibility: hidden;
+                transition: .3s ease;
+            }
+
+            .sidebar-overlay.show {
+                opacity: 1;
+                visibility: visible;
+            }
+
+            .warga-main {
+                width: 100%;
+                margin-left: 0;
+                padding: 22px 18px 30px;
+            }
+
+            .page-header-row {
+                display: flex;
+                flex-direction: row;
                 align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+            }
+
+            .warga-heading {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .warga-heading h1 {
+                font-size: 22px;
+            }
+
+            .warga-heading p {
+                font-size: 11px;
+            }
+
+            .header-actions {
+                display: flex;
                 flex-direction: column;
+                align-items: flex-end;
+                justify-content: flex-start;
+                flex-shrink: 0;
+                gap: 8px;
+            }
+
+            .mobile-menu-button {
+                display: flex;
+            }
+
+            .btn-kembali {
+                padding: 9px 12px;
+                font-size: 10px;
             }
 
             .profil-grid {
                 grid-template-columns: 1fr;
             }
 
+            .profil-summary {
+                padding: 25px 22px;
+            }
+
+        }
+
+        /* =====================================
+           RESPONSIVE HP KECIL
+        ===================================== */
+
+        @media (max-width: 480px) {
+
+            .warga-main {
+                padding: 19px 13px 25px;
+            }
+
+            .page-header-row {
+                gap: 8px;
+            }
+
+            .warga-heading h1 {
+                font-size: 18px;
+            }
+
+            .warga-heading p {
+                font-size: 10px;
+                line-height: 1.6;
+            }
+
+            .header-actions {
+                gap: 6px;
+            }
+
+            .mobile-menu-button {
+                width: 39px;
+                height: 39px;
+                font-size: 20px;
+            }
+
+            .btn-kembali {
+                padding: 9px 10px;
+                font-size: 9px;
+            }
+
             .profil-form-card {
-                padding: 22px 18px;
+                padding: 18px 15px;
             }
 
             .form-grid {
                 grid-template-columns: 1fr;
-                gap: 16px;
+                gap: 15px;
             }
 
             .form-group.full {
@@ -556,53 +908,168 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
             .btn-simpan {
                 width: 100%;
             }
+
         }
 
-        @media (max-width: 480px) {
-            .profil-title h1 {
-                font-size: 24px;
-            }
-
-            .profil-summary {
-                padding: 25px 20px;
-            }
-
-            .btn-kembali {
-                width: 100%;
-                justify-content: center;
-            }
-        }
     </style>
 </head>
 
 <body>
 
-<div class="profil-page">
+<!-- =====================================
+     SIDEBAR WARGA
+===================================== -->
 
-    <!-- HEADER -->
-    <div class="profil-header">
+<aside class="warga-sidebar" id="wargaSidebar">
 
-        <div class="profil-title">
-            <h1>Profil Saya</h1>
-            <p>Kelola informasi pribadi akun Bank Sampah Digital.</p>
+    <div class="sidebar-brand">
+
+        <div class="sidebar-brand-top">
+
+            <div class="sidebar-logo">
+                <img
+                    src="../assets/images/logo-tps3r.png"
+                    alt="Logo TPS 3R"
+                >
+            </div>
+
+            <div>
+                <h2>Bank Sampah TPS 3R Kopling Berjaya</h2>
+                <p>TPS 3R KELURAHAN PULAU KAROMAH</p>
+            </div>
+
         </div>
 
-        <a href="dashboard.php" class="btn-kembali">
-            ← Kembali ke Dashboard
+    </div>
+
+    <nav class="sidebar-nav">
+
+        <div class="sidebar-section-title">Utama</div>
+
+        <a href="dashboard.php" class="sidebar-link">
+            <span class="sidebar-icon">🏠</span>
+            <span>Dashboard</span>
         </a>
+
+        <div class="sidebar-section-title">Layanan Warga</div>
+
+        <a href="qr_saya.php" class="sidebar-link">
+            <span class="sidebar-icon">▣</span>
+            <span>QR Code Saya</span>
+        </a>
+
+        <a href="ajukan_setoran.php" class="sidebar-link">
+            <span class="sidebar-icon">♻️</span>
+            <span>Ajukan Setoran</span>
+        </a>
+
+        <a href="riwayat_setoran.php" class="sidebar-link">
+            <span class="sidebar-icon">📦</span>
+            <span>Riwayat Setoran</span>
+        </a>
+
+        <a href="riwayat_tabungan.php" class="sidebar-link">
+            <span class="sidebar-icon">💰</span>
+            <span>Riwayat Tabungan</span>
+        </a>
+
+        <a href="ajukan_penarikan.php" class="sidebar-link">
+            <span class="sidebar-icon">💸</span>
+            <span>Penarikan Tabungan</span>
+        </a>
+
+        <a href="riwayat_penarikan.php" class="sidebar-link">
+            <span class="sidebar-icon">📋</span>
+            <span>Riwayat Penarikan</span>
+        </a>
+
+        <a href="notifikasi.php" class="sidebar-link">
+            <span class="sidebar-icon">🔔</span>
+            <span>Notifikasi</span>
+        </a>
+
+        <div class="sidebar-section-title">Akun</div>
+
+        <a href="profil.php" class="sidebar-link active">
+            <span class="sidebar-icon">⚙️</span>
+            <span>Profil Saya</span>
+        </a>
+         <a href="aktivitas.php" class="sidebar-link">
+            <span class="sidebar-icon">🕘</span>
+            <span>Aktivitas Saya</span>
+        </a>
+        <a href="../auth/logout.php" class="sidebar-link sidebar-logout">
+            <span class="sidebar-icon">🚪</span>
+            <span>Logout</span>
+        </a>
+
+    </nav>
+
+</aside>
+
+<!-- OVERLAY -->
+
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<!-- =====================================
+     KONTEN UTAMA
+===================================== -->
+
+<main class="warga-main">
+
+    <!-- HEADER -->
+
+    <div class="page-header-row">
+
+        <div class="warga-heading">
+
+            <h1>Profil Saya</h1>
+
+            <p>
+                Kelola informasi pribadi akun Bank Sampah Digital.
+            </p>
+
+        </div>
+
+        <div class="header-actions">
+
+            <button
+                type="button"
+                class="mobile-menu-button"
+                id="mobileMenuButton"
+                aria-label="Buka menu"
+                aria-expanded="false"
+            >
+                ☰
+            </button>
+
+            <a href="dashboard.php" class="btn-kembali">
+                <span>←</span>
+                Kembali ke Dashboard
+            </a>
+
+        </div>
 
     </div>
 
     <!-- ALERT -->
+
     <?php if ($pesan !== ''): ?>
+
         <div class="profil-alert <?= $tipe_pesan === 'success' ? 'success' : 'error' ?>">
             <?= htmlspecialchars($pesan, ENT_QUOTES, 'UTF-8') ?>
         </div>
+
     <?php endif; ?>
+
+    <!-- =====================================
+         GRID PROFIL
+    ===================================== -->
 
     <div class="profil-grid">
 
         <!-- RINGKASAN PROFIL -->
+
         <div class="profil-card">
 
             <div class="profil-summary">
@@ -628,6 +1095,7 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
                     <div class="profil-info-item">
                         <span class="profil-info-label">Email</span>
+
                         <div class="profil-info-value">
                             <?= htmlspecialchars($email, ENT_QUOTES, 'UTF-8') ?>
                         </div>
@@ -635,6 +1103,7 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
                     <div class="profil-info-item">
                         <span class="profil-info-label">Nomor HP</span>
+
                         <div class="profil-info-value">
                             <?= htmlspecialchars($no_hp ?: '-', ENT_QUOTES, 'UTF-8') ?>
                         </div>
@@ -642,6 +1111,7 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
                     <div class="profil-info-item">
                         <span class="profil-info-label">Alamat</span>
+
                         <div class="profil-info-value">
                             <?= nl2br(htmlspecialchars($alamat ?: '-', ENT_QUOTES, 'UTF-8')) ?>
                         </div>
@@ -649,16 +1119,34 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
                 </div>
 
+                <div class="profil-shortcuts">
+
+                    <a href="ubah_password.php" class="btn-ubah-password">
+                        🔒 Ubah Password
+                    </a>
+
+                    <a href="aktivitas.php" class="btn-aktivitas">
+                        🕘 Aktivitas Saya
+                    </a>
+
+                </div>
+
             </div>
 
         </div>
 
-        <!-- FORM EDIT -->
+        <!-- FORM EDIT PROFIL -->
+
         <div class="profil-card profil-form-card">
 
             <div class="form-heading">
+
                 <h2>Informasi Pribadi</h2>
-                <p>Perbarui informasi yang digunakan pada akun Anda.</p>
+
+                <p>
+                    Perbarui informasi yang digunakan pada akun Anda.
+                </p>
+
             </div>
 
             <form method="POST" action="profil.php">
@@ -672,8 +1160,12 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                 <div class="form-grid">
 
                     <!-- NAMA -->
+
                     <div class="form-group">
-                        <label for="nama_lengkap">Nama Lengkap</label>
+
+                        <label for="nama_lengkap">
+                            Nama Lengkap
+                        </label>
 
                         <input
                             type="text"
@@ -683,11 +1175,16 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                             maxlength="100"
                             required
                         >
+
                     </div>
 
                     <!-- USERNAME -->
+
                     <div class="form-group">
-                        <label for="username">Username</label>
+
+                        <label for="username">
+                            Username
+                        </label>
 
                         <input
                             type="text"
@@ -699,11 +1196,16 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                         <span class="form-help">
                             Username tidak dapat diubah.
                         </span>
+
                     </div>
 
                     <!-- EMAIL -->
+
                     <div class="form-group">
-                        <label for="email">Email</label>
+
+                        <label for="email">
+                            Email
+                        </label>
 
                         <input
                             type="email"
@@ -713,11 +1215,16 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                             maxlength="150"
                             required
                         >
+
                     </div>
 
-                    <!-- NO HP -->
+                    <!-- NOMOR HP -->
+
                     <div class="form-group">
-                        <label for="no_hp">Nomor HP</label>
+
+                        <label for="no_hp">
+                            Nomor HP
+                        </label>
 
                         <input
                             type="text"
@@ -727,11 +1234,16 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                             maxlength="20"
                             placeholder="Contoh: 081234567890"
                         >
+
                     </div>
 
                     <!-- ALAMAT -->
+
                     <div class="form-group full">
-                        <label for="alamat">Alamat</label>
+
+                        <label for="alamat">
+                            Alamat
+                        </label>
 
                         <textarea
                             id="alamat"
@@ -743,6 +1255,7 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                         <span class="form-help">
                             Maksimal 500 karakter.
                         </span>
+
                     </div>
 
                 </div>
@@ -750,16 +1263,8 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
                 <div class="form-actions">
 
                     <button type="submit" class="btn-simpan">
-                        Simpan Perubahan
+                        💾 Simpan Perubahan
                     </button>
-
-                    <a href="ubah_password.php" class="btn-ubah-password">
-                        🔒 Ubah Password
-                    </a>
-
-                    <a href="aktivitas.php" class="btn-aktivitas">
-                        🕘 Aktivitas Saya
-                    </a>
 
                 </div>
 
@@ -769,7 +1274,65 @@ $inisial = strtoupper(substr($nama_lengkap, 0, 1));
 
     </div>
 
-</div>
+</main>
+
+<!-- =====================================
+     JAVASCRIPT HAMBURGER
+===================================== -->
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    const menuButton = document.getElementById('mobileMenuButton');
+    const sidebar = document.getElementById('wargaSidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+
+    if (menuButton && sidebar && overlay) {
+
+        function tutupMenu() {
+
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+
+            menuButton.innerHTML = '☰';
+
+            menuButton.setAttribute('aria-expanded', 'false');
+
+        }
+
+        menuButton.addEventListener('click', function () {
+
+            const terbuka = sidebar.classList.toggle('open');
+
+            overlay.classList.toggle('show', terbuka);
+
+            menuButton.innerHTML = terbuka ? '✕' : '☰';
+
+            menuButton.setAttribute(
+                'aria-expanded',
+                String(terbuka)
+            );
+
+        });
+
+        overlay.addEventListener('click', tutupMenu);
+
+        sidebar.querySelectorAll('.sidebar-link').forEach(link => {
+            link.addEventListener('click', tutupMenu);
+        });
+
+        document.addEventListener('keydown', function (event) {
+
+            if (event.key === 'Escape') {
+                tutupMenu();
+            }
+
+        });
+
+    }
+
+});
+</script>
 
 </body>
 </html>
