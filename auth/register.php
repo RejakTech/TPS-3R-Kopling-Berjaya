@@ -1,5 +1,3 @@
-            case 'nama_lengkap':
-                if (!value) {
                     message = 'Nama lengkap wajib diisi.';
                 } else if (!/^[\p{L}\s.'-]+$/u.test(value)) {
                     message = 'Nama hanya boleh berisi huruf, spasi, titik, apostrof, atau tanda hubung.';
@@ -13,8 +11,8 @@
                     message = 'Username wajib diisi.';
                 } else if (value.length < 3 || value.length > 30) {
                     message = 'Username harus terdiri dari 3–30 karakter.';
-                } else if (!/^[A-Za-z0-9_.]+$/.test(value)) {
-                    message = 'Username hanya boleh berisi huruf, angka, titik, dan garis bawah (_).';
+                } else if (!/^[A-Za-z0-9]+$/.test(value)) {
+                    message = 'Username hanya boleh berisi huruf dan angka, tanpa simbol atau spasi.';
                 }
                 break;
 
@@ -25,25 +23,30 @@
                 break;
 
             case 'no_hp':
-                if (value) {
-                    const digits = value.replace(/\D/g, '').length;
-                    if (!/^[0-9+\-\s()]+$/.test(value) || digits < 8 || digits > 15 || value.length > 20) {
-                        message = 'Nomor HP harus berisi 8–15 angka.';
-                    }
+                if (!value) {
+                    message = 'Nomor WhatsApp wajib diisi.';
+                } else if (!/^(0[0-9]{9,14}|62[0-9]{8,13})$/.test(value)) {
+                    message = 'Nomor WhatsApp harus 10–15 angka tanpa simbol/spasi, diawali 0 atau 62.';
                 }
                 break;
 
             case 'alamat':
-                if (value.length > 255) {
-                    message = 'Alamat maksimal 255 karakter.';
+                if (!value) {
+                    message = 'Alamat lengkap wajib diisi.';
+                } else if (value.length < 10 || value.length > 255) {
+                    message = 'Alamat harus terdiri dari 10–255 karakter.';
+                } else if (!/^[\p{L}0-9 ,./-]+$/u.test(value) || !/[\p{L}]{2}/u.test(value)) {
+                    message = 'Masukkan alamat lengkap seperti format Google Maps, tanpa karakter khusus.';
                 }
                 break;
 
             case 'password':
                 if (!input.value) {
                     message = 'Password wajib diisi.';
-                } else if (input.value.length < 8) {
-                    message = 'Password minimal 8 karakter.';
+                } else if ([...input.value].length < 8) {
+                    message = 'Password wajib minimal 8 karakter.';
+                } else if (!/^[A-Z]/.test(input.value)) {
+                    message = 'Karakter pertama password wajib huruf kapital (A–Z).';
                 }
                 break;
 
