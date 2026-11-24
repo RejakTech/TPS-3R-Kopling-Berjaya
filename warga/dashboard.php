@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 $nama_warga = htmlspecialchars($_SESSION['nama'] ?? 'Warga', ENT_QUOTES, 'UTF-8');
@@ -167,7 +167,7 @@ function tanggalIndonesia($tanggal)
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/20fX8p1Jx6v5CwVxP9vN8j9oL0m2P6Gm2B6kqLZtQ==" crossorigin="anonymous">
 
     <style>
         :root {
@@ -2036,7 +2036,7 @@ function tanggalIndonesia($tanggal)
 
                 <div class="panel-body">
 
-                    <?php if (count($notifikasi) > 0): ?>
+                    <?php if (!empty($notifikasi)): ?>
 
                         <?php foreach ($notifikasi as $notif): ?>
 

@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 require_once '../config/notifikasi.php';
 require_once '../config/log_aktivitas.php';
 
@@ -1393,7 +1393,7 @@ $kategori_query = mysqli_query(
 
                     <div class="petugas-form-group full-width">
 
-                        <label>
+                        <label for="kategori_id">
                             Kategori Sampah <span>*</span>
                         </label>
 
@@ -1428,7 +1428,7 @@ $kategori_query = mysqli_query(
 
                     <div class="petugas-form-group">
 
-                        <label>
+                        <label for="berat_kg">
                             Berat Sampah (Kg) <span>*</span>
                         </label>
 
@@ -1451,7 +1451,7 @@ $kategori_query = mysqli_query(
 
                     <div class="petugas-form-group">
 
-                        <label>
+                        <label for="tanggal_setor">
                             Tanggal Setoran <span>*</span>
                         </label>
 
@@ -1479,9 +1479,10 @@ $kategori_query = mysqli_query(
 
                     <div class="petugas-form-group full-width">
 
-                        <label>Catatan Tambahan</label>
+                        <label for="catatan">Catatan Tambahan</label>
 
                         <textarea
+                            id="catatan"
                             name="catatan"
                             rows="4"
                             maxlength="5000"
@@ -1622,7 +1623,6 @@ if (menuButton && sidebar && overlay) {
 }
 
 
-</script>
 </script>
 </main>
 
