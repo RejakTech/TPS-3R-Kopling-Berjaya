@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 
@@ -1096,7 +1096,7 @@ if ($tabungan) {
 
                     <tbody>
 
-                        <?php if (count($data_mutasi) > 0) : ?>
+                        <?php if (!empty($data_mutasi)) : ?>
 
                             <?php foreach ($data_mutasi as $index => $mutasi) : ?>
 

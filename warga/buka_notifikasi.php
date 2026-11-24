@@ -1,12 +1,13 @@
 <?php
 session_start();
+define('NOTIFIKASI_REDIRECT', 'Location: notifikasi.php');
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     header("Location: ../auth/login.php");
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 $notifikasi_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -15,7 +16,7 @@ $notifikasi_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
  * Validasi ID notifikasi
  */
 if ($notifikasi_id <= 0) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
@@ -47,14 +48,14 @@ $notifikasi = mysqli_fetch_assoc($result_cek);
 mysqli_stmt_close($stmt_cek);
 
 if (!$notifikasi) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
 $link = $notifikasi['link'] ?? '';
 
 if (trim($link) === '') {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
@@ -101,7 +102,7 @@ $link_file = basename($link_path);
  * kembali ke halaman notifikasi
  */
 if (!in_array($link_file, $allowed_pages, true)) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
@@ -129,7 +130,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 $notifikasi_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -138,7 +139,7 @@ $notifikasi_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
  * Validasi ID notifikasi
  */
 if ($notifikasi_id <= 0) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
@@ -170,14 +171,14 @@ $notifikasi = mysqli_fetch_assoc($result_cek);
 mysqli_stmt_close($stmt_cek);
 
 if (!$notifikasi) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
 $link = $notifikasi['link'] ?? '';
 
 if (trim($link) === '') {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 
@@ -224,7 +225,7 @@ $link_file = basename($link_path);
  * kembali ke halaman notifikasi
  */
 if (!in_array($link_file, $allowed_pages, true)) {
-    header("Location: notifikasi.php");
+    header(NOTIFIKASI_REDIRECT);
     exit;
 }
 

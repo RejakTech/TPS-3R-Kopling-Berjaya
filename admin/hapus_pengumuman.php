@@ -14,6 +14,8 @@ if (
 
 require_once __DIR__ . '/../config/koneksi.php';
 
+const REDIRECT_GAGAL_HAPUS = "Location: pengumuman.php?pesan=gagal_hapus";
+
 // Pastikan penghapusan menggunakan POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header("Location: pengumuman.php");
@@ -55,7 +57,7 @@ $gambarStmt = mysqli_prepare(
 );
 
 if (!$gambarStmt) {
-    header("Location: pengumuman.php?pesan=gagal_hapus");
+    header(REDIRECT_GAGAL_HAPUS);
     exit;
 }
 
@@ -86,7 +88,7 @@ if (!$hapusGambar || !$hapus) {
     if ($hapus) {
         mysqli_stmt_close($hapus);
     }
-    header("Location: pengumuman.php?pesan=gagal_hapus");
+    header(REDIRECT_GAGAL_HAPUS);
     exit;
 }
 
@@ -115,7 +117,6 @@ if (mysqli_stmt_execute($hapusGambar) && mysqli_stmt_execute($hapus) && mysqli_c
     mysqli_stmt_close($hapusGambar);
     mysqli_stmt_close($hapus);
 
-    header("Location: pengumuman.php?pesan=gagal_hapus");
+    header(REDIRECT_GAGAL_HAPUS);
     exit;
 }
-?>

@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 require_once '../config/notifikasi.php';
 require_once '../config/log_aktivitas.php';
 
@@ -1046,12 +1046,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- NOMINAL -->
                         <div class="petugas-form-group full-width">
 
-                            <label>
+                            <label for="jumlah">
                                 Nominal Penarikan <span>*</span>
                             </label>
 
                             <input
                                 type="number"
+                                id="jumlah"
                                 name="jumlah"
                                 min="0.01"
                                 max="<?php echo htmlspecialchars((string)$saldo); ?>"
@@ -1066,7 +1067,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- METODE -->
                         <div class="petugas-form-group full-width">
 
-                            <label>
+                            <label for="metode_penarikan">
                                 Metode Penarikan <span>*</span>
                             </label>
 
@@ -1094,7 +1095,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             <div class="rekening-form-group">
 
-                                <label>
+                                <label for="nomor_rekening">
                                     Nomor Rekening <span>*</span>
                                 </label>
 
@@ -1111,7 +1112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             <div class="rekening-form-group">
 
-                                <label>
+                                <label for="nama_pemilik_rekening">
                                     Nama Pemilik Rekening <span>*</span>
                                 </label>
 
@@ -1131,10 +1132,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <!-- CATATAN -->
                         <div class="petugas-form-group full-width">
 
-                            <label>Catatan Tambahan</label>
+                            <label for="catatan">Catatan Tambahan</label>
 
                             <textarea
                                 name="catatan"
+                                id="catatan"
                                 rows="4"
                                 maxlength="5000"
                                 placeholder="Tambahkan keterangan jika diperlukan (opsional)"

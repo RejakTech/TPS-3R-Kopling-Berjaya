@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 $penarikan_id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
@@ -1005,7 +1005,7 @@ mysqli_stmt_close($stmt);
 
                 <tbody>
 
-                    <?php if (count($data_penarikan) > 0) : ?>
+                    <?php if (!empty($data_penarikan)) : ?>
 
                         <?php foreach ($data_penarikan as $index => $penarikan) : ?>
 

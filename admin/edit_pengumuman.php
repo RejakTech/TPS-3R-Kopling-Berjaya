@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 require_once __DIR__ . '/../config/pengumuman_gambar.php';
 
 /* =========================
@@ -127,9 +127,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $hapus_headline = isset($_POST['hapus_gambar_headline']);
-            $gambar_baru = $gambar_headline_baru
-                ? $gambar_headline_baru[0]
-                : ($hapus_headline ? null : $gambar_lama);
+            if ($gambar_headline_baru) {
+                $gambar_baru = $gambar_headline_baru[0];
+            } elseif ($hapus_headline) {
+                $gambar_baru = null;
+            } else {
+                $gambar_baru = $gambar_lama;
+            }
 
             $id_gambar_dihapus = [];
             $gambar_dihapus = [];
@@ -230,9 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($error === '' && mysqli_commit($conn)) {
                         $hapusSetelahSimpan = $gambar_dihapus;
-                        if ($gambar_headline_baru && $gambar_lama !== '') {
-                            $hapusSetelahSimpan[] = $gambar_lama;
-                        } elseif ($hapus_headline && $gambar_lama !== '') {
+                        if (($gambar_headline_baru && $gambar_lama !== '') || ($hapus_headline && $gambar_lama !== '')) {
                             $hapusSetelahSimpan[] = $gambar_lama;
                         }
                         hapusFileGambarPengumuman($hapusSetelahSimpan);
@@ -283,7 +285,9 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
     <link rel="stylesheet" href="../assets/css/style.css">
 
     <link rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+          integrity="sha512-iBBXm8fW90+nuLcSKlbmrPcLa0OT92xO1BIsZ+ywDWZCvqsWgccV3gFoRBv0z+8dLJgyAHIhR35VZc2oM/gI1w=="
+          crossorigin="anonymous">
 
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
           rel="stylesheet">
@@ -853,7 +857,6 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
                                 <img
                                     src="../uploads/pengumuman/<?= e(basename($gambar_tampil)) ?>"
                                     alt="Gambar pengumuman saat ini"
-                                    onerror="this.style.display='none';"
                                 >
 
                                 <label class="form-hint">
@@ -902,7 +905,6 @@ $gambar_tampil = $pengumuman['gambar'] ?? '';
                                             <img
                                                 src="../uploads/pengumuman/<?= e(basename($gambar_item['nama_file'])) ?>"
                                                 alt="Gambar isi berita"
-                                                onerror="this.style.display='none';"
                                             >
                                             <span>
                                                 <input

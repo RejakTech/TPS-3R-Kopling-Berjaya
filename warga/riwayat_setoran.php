@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 $nama_warga = htmlspecialchars($_SESSION['nama'] ?? 'Warga', ENT_QUOTES, 'UTF-8');
@@ -1676,7 +1676,7 @@ function e($value)
 
                     <tbody>
 
-                        <?php if (count($data_setoran) > 0): ?>
+                        <?php if (!empty($data_setoran)): ?>
 
                             <?php foreach ($data_setoran as $index => $setoran): ?>
 
