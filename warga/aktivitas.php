@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 
@@ -137,59 +137,49 @@ if ($stmt_jenis) {
 function getIconAktivitas($aktivitas)
 {
     $aktivitas_lower = strtolower($aktivitas);
+    $icon = '●';
 
     if (strpos($aktivitas_lower, 'setor') !== false) {
-        return '♻';
-    }
-
-    if (
+        $icon = '♻';
+    } elseif (
         strpos($aktivitas_lower, 'tarik') !== false ||
         strpos($aktivitas_lower, 'penarikan') !== false
     ) {
-        return '💰';
-    }
-
-    if (
+        $icon = '💰';
+    } elseif (
         strpos($aktivitas_lower, 'password') !== false ||
         strpos($aktivitas_lower, 'akun') !== false
     ) {
-        return '🔐';
+        $icon = '🔐';
+    } elseif (strpos($aktivitas_lower, 'login') !== false) {
+        $icon = '↪';
+    } elseif (strpos($aktivitas_lower, 'profil') !== false) {
+        $icon = '👤';
     }
 
-    if (strpos($aktivitas_lower, 'login') !== false) {
-        return '↪';
-    }
-
-    if (strpos($aktivitas_lower, 'profil') !== false) {
-        return '👤';
-    }
-
-    return '●';
+    return $icon;
 }
 
 function getClassAktivitas($aktivitas)
 {
     $aktivitas_lower = strtolower($aktivitas);
+    $class = 'activity-default';
 
     if (strpos($aktivitas_lower, 'setor') !== false) {
-        return 'activity-green';
-    }
-
-    if (
+        $class = 'activity-green';
+    } elseif (
         strpos($aktivitas_lower, 'tarik') !== false ||
         strpos($aktivitas_lower, 'penarikan') !== false
     ) {
-        return 'activity-gold';
-    }
-
-    if (
+        $class = 'activity-gold';
+    } elseif (
         strpos($aktivitas_lower, 'password') !== false ||
         strpos($aktivitas_lower, 'akun') !== false
     ) {
-        return 'activity-blue';
+        $class = 'activity-blue';
     }
 
-    return 'activity-default';
+    return $class;
 }
 
 function e($value)

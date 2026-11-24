@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'warga') {
     exit;
 }
 
-include '../config/koneksi.php';
+include_once '../config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
 
@@ -44,10 +44,11 @@ $qrData = "BSW|WARGA|" . $warga['id'];
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Saya</title>
 
 
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="" crossorigin="anonymous"></script>
 
 <style>
 * {
@@ -200,7 +201,7 @@ body {
             id="downloadButton"
             disabled
         >
-             Unduh QR Code 
+             Unduh QR Code
         </button>
 
         <a href="dashboard.php" class="btn btn-back">
