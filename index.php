@@ -65,7 +65,9 @@ $total_sampah = $data_sampah['total'] ?? 0;
 
        <link rel="stylesheet" href="assets/css/style.css?v=4">
        <link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w0U1o3fYySgU"
+        crossorigin="anonymous">
 </head>
 <body>
 
