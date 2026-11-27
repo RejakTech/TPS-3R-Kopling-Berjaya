@@ -1,116 +1,145 @@
-
 <?php
 session_start();
 
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../auth/login.php");
+// Pastikan pengguna sudah login sebagai admin.
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    header('Location: ../auth/login.php');
     exit;
 }
 
-include '../config/koneksi.php';
-
-$error = "";
-$nama_kategori = "";
-$deskripsi = "";
-$harga_per_kg = "";
-
-// Token keamanan
+// Token CSRF untuk melindungi formulir.
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+require_once __DIR__ . '/../config/koneksi.php';
 
+$error = '';
+$nama_kategori = '';
+$deskripsi = '';
+$harga_per_kg = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (
         !isset($_POST['csrf_token']) ||
         !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])
     ) {
-        $error = "Permintaan tidak valid. Silakan coba kembali.";
-
+        $error = 'Permintaan tidak valid. Silakan muat ulang halaman.';
     } else {
-
         $nama_kategori = trim($_POST['nama_kategori'] ?? '');
         $deskripsi = trim($_POST['deskripsi'] ?? '');
         $harga_per_kg = trim($_POST['harga_per_kg'] ?? '');
 
-        if ($nama_kategori === "" || $harga_per_kg === "") {
-            $error = "Nama kategori dan harga wajib diisi.";
-
-        } elseif (strlen($nama_kategori) > 100) {
-            $error = "Nama kategori maksimal 100 karakter.";
-
-        } elseif (strlen($deskripsi) > 1000) {
-            $error = "Deskripsi maksimal 1000 karakter.";
- 
-
-        } elseif (!is_numeric($harga_per_kg) || (float)$harga_per_kg < 0) {
-            $error = "Harga harus berupa angka dan tidak boleh negatif.";
-
-        } elseif (!is_finite((float)$harga_per_kg) || (float)$harga_per_kg > 9999999999.99) {
-            $error = "Harga melebihi batas yang diperbolehkan.";
-
+        if ($nama_kategori === '' || $harga_per_kg === '') {
+            $error = 'Nama kategori dan harga wajib diisi.';
+        } elseif (mb_strlen($nama_kategori) > 100) {
+            $error = 'Nama kategori maksimal 100 karakter.';
+        } elseif (mb_strlen($deskripsi) > 1000) {
+            $error = 'Deskripsi maksimal 1000 karakter.';
+        } elseif (!is_numeric($harga_per_kg) || !is_finite((float) $harga_per_kg) || (float) $harga_per_kg < 0 || (float) $harga_per_kg > 9999999999.99) {
+            $error = 'Harga harus berupa angka yang valid dan tidak boleh negatif.';
         } else {
+            $foto_db = null;
+            $file_foto_baru = null;
+            $folder_foto = dirname(__DIR__) . '/uploads/kategori/';
 
             try {
-
-                // Periksa nama kategori
+                // Periksa apakah nama kategori sudah digunakan.
                 $cek = mysqli_prepare(
                     $conn,
-                    "SELECT id FROM kategori_sampah
-                     WHERE nama_kategori = ? LIMIT 1"
+                    'SELECT id FROM kategori_sampah WHERE nama_kategori = ? LIMIT 1'
                 );
-
-                mysqli_stmt_bind_param($cek, "s", $nama_kategori);
+                mysqli_stmt_bind_param($cek, 's', $nama_kategori);
                 mysqli_stmt_execute($cek);
                 mysqli_stmt_store_result($cek);
 
                 if (mysqli_stmt_num_rows($cek) > 0) {
-
-                    $error = "Nama kategori sudah terdaftar.";
-
+                    $error = 'Nama kategori sudah terdaftar.';
                 } else {
+                    // Foto bersifat opsional. Tidak ada batas ukuran di kode aplikasi ini.
+                    if (isset($_FILES['foto']) && $_FILES['foto']['error'] !== UPLOAD_ERR_NO_FILE) {
+                        $upload_error = $_FILES['foto']['error'];
 
-                    $harga = (float)$harga_per_kg;
-                    $deskripsi_db = $deskripsi !== "" ? $deskripsi : null;
-                    $status = "aktif";
+                        if ($upload_error !== UPLOAD_ERR_OK) {
+                            if ($upload_error === UPLOAD_ERR_INI_SIZE || $upload_error === UPLOAD_ERR_FORM_SIZE) {
+                                $error = 'Ukuran foto melewati batas upload yang diizinkan server. Periksa pengaturan PHP di php.ini.';
+                            } elseif ($upload_error === UPLOAD_ERR_PARTIAL) {
+                                $error = 'Foto hanya terunggah sebagian. Silakan coba lagi.';
+                            } else {
+                                $error = 'Foto gagal diunggah. Kode kesalahan: ' . (int) $upload_error;
+                            }
+                        } elseif (!is_uploaded_file($_FILES['foto']['tmp_name'])) {
+                            $error = 'Berkas foto tidak valid.';
+                        } else {
+                            // Validasi berdasarkan MIME file, bukan nama ekstensi dari pengguna.
+                            $finfo = new finfo(FILEINFO_MIME_TYPE);
+                            $mime = $finfo->file($_FILES['foto']['tmp_name']);
+                            $format_valid = [
+                                'image/jpeg' => 'jpg',
+                                'image/png'  => 'png',
+                                'image/webp' => 'webp'
+                            ];
 
-                    $query = mysqli_prepare(
-                        $conn,
-                        "INSERT INTO kategori_sampah
-                        (nama_kategori, deskripsi, harga_per_kg, status)
-                        VALUES (?, ?, ?, ?)"
-                    );
+                            if (!isset($format_valid[$mime])) {
+                                $error = 'Format foto harus JPG, PNG, atau WEBP.';
+                            } else {
+                                if (!is_dir($folder_foto) && !mkdir($folder_foto, 0755, true) && !is_dir($folder_foto)) {
+                                    $error = 'Folder penyimpanan foto gagal dibuat.';
+                                } elseif (!is_writable($folder_foto)) {
+                                    $error = 'Folder penyimpanan foto tidak memiliki izin tulis.';
+                                } else {
+                                    $nama_file = bin2hex(random_bytes(16)) . '.' . $format_valid[$mime];
+                                    $tujuan_foto = $folder_foto . $nama_file;
 
-                    mysqli_stmt_bind_param(
-                        $query,
-                        "ssds",
-                        $nama_kategori,
-                        $deskripsi_db,
-                        $harga,
-                        $status
-                    );
+                                    if (move_uploaded_file($_FILES['foto']['tmp_name'], $tujuan_foto)) {
+                                        $foto_db = $nama_file;
+                                        $file_foto_baru = $tujuan_foto;
+                                    } else {
+                                        $error = 'Foto gagal disimpan ke folder uploads/kategori.';
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                    if (!mysqli_stmt_execute($query)) {
-    throw new mysqli_sql_exception("Gagal menyimpan kategori.");
-}
+                    if ($error === '') {
+                        $harga = (float) $harga_per_kg;
+                        $deskripsi_db = $deskripsi !== '' ? $deskripsi : null;
+                        $status = 'aktif';
 
-                    mysqli_stmt_close($query);
-                    mysqli_stmt_close($cek);
+                        $query = mysqli_prepare(
+                            $conn,
+                            'INSERT INTO kategori_sampah (nama_kategori, deskripsi, harga_per_kg, status, foto) VALUES (?, ?, ?, ?, ?)'
+                        );
+                        mysqli_stmt_bind_param($query, 'ssdss', $nama_kategori, $deskripsi_db, $harga, $status, $foto_db);
 
-                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                        if (!mysqli_stmt_execute($query)) {
+                            throw new mysqli_sql_exception('Gagal menyimpan kategori ke database.');
+                        }
 
-                    header("Location: kategori.php?status=berhasil");
-                    exit;
+                        mysqli_stmt_close($query);
+                        mysqli_stmt_close($cek);
+
+                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                        header('Location: kategori.php?status=berhasil');
+                        exit;
+                    }
                 }
 
                 mysqli_stmt_close($cek);
-
             } catch (mysqli_sql_exception $e) {
-                $error = "Terjadi kesalahan saat menyimpan kategori.";
+                // Hapus foto yang sudah dipindahkan jika penyimpanan database gagal.
+                if ($file_foto_baru !== null && is_file($file_foto_baru)) {
+                    unlink($file_foto_baru);
+                }
+                error_log('Tambah kategori gagal: ' . $e->getMessage());
+                $error = 'Terjadi kesalahan saat menyimpan kategori. Periksa struktur tabel database.';
+            } catch (Throwable $e) {
+                if ($file_foto_baru !== null && is_file($file_foto_baru)) {
+                    unlink($file_foto_baru);
+                }
+                error_log('Upload kategori gagal: ' . $e->getMessage());
+                $error = 'Terjadi kesalahan saat memproses foto atau kategori.';
             }
         }
     }
@@ -287,6 +316,25 @@ body {
 .petugas-form-group textarea {
     min-height: 110px;
     resize: vertical;
+}
+
+/* Input upload foto kategori */
+.petugas-form-group input[type="file"] {
+    height: auto;
+    min-height: 48px;
+    padding: 10px 12px;
+    cursor: pointer;
+    background: #f8fbfc;
+}
+
+.petugas-form-group input[type="file"]::file-selector-button {
+    margin-right: 12px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: #0B354D;
+    color: #ffffff;
+    cursor: pointer;
 }
 
 .petugas-form-group input:focus,
@@ -652,7 +700,7 @@ body {
             </div>
         <?php endif; ?>
 
-        <form method="POST" action="">
+        <form method="POST" action="" enctype="multipart/form-data">
 
             <input
                 type="hidden"
@@ -704,6 +752,18 @@ body {
 
             </div>
 
+            <div class="petugas-form-group full-width">
+    <label>Foto Kategori Sampah</label>
+    <input
+        type="file"
+        name="foto"
+        accept="image/jpeg,image/png,image/webp"
+    >
+    <small>
+        Pilih foto kategori sampah. Format JPG, PNG, atau WEBP.
+    </small>
+</div>
+
             <div class="petugas-form-actions">
 
                 <a href="kategori.php" class="btn-batal-petugas">
@@ -719,10 +779,6 @@ body {
                 </button>
 
             </div>
-
-        </form>
-
-    </div>
 
         </form>
 

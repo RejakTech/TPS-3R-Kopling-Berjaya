@@ -282,10 +282,10 @@ try {
     }
 }
 
-// Ambil kategori sampah yang aktif
+// Ambil kategori sampah yang aktif beserta fotonya
 $kategori_query = mysqli_query(
     $conn,
-    "SELECT id, nama_kategori, harga_per_kg
+    "SELECT id, nama_kategori, harga_per_kg, foto
      FROM kategori_sampah
      WHERE status = 'aktif'
      ORDER BY nama_kategori ASC"
@@ -1218,6 +1218,154 @@ $kategori_query = mysqli_query(
     height: 0 !important;
 }
 
+/* KARTU PILIHAN KATEGORI */
+
+.kategori-pilihan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 16px;
+    margin-top: 8px;
+}
+
+.kategori-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+    background: #fff;
+    border: 2px solid #E5EDF2;
+    border-radius: 13px;
+    cursor: pointer;
+    transition: .2s ease;
+    font-family: inherit;
+}
+
+.kategori-card:hover {
+    border-color: #159BAE;
+    transform: translateY(-3px);
+}
+
+.kategori-card.selected {
+    border-color: #159BAE;
+    background: #EFFBFC;
+    box-shadow: 0 0 0 3px rgba(21,155,174,.10);
+}
+
+.kategori-card img {
+    width: 100%;
+    height: 125px;
+    object-fit: cover;
+    border-radius: 9px;
+    margin-bottom: 12px;
+}
+
+.kategori-no-image {
+    width: 100%;
+    height: 125px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #F1F6F9;
+    border-radius: 9px;
+    color: #8295A2;
+    gap: 7px;
+    margin-bottom: 12px;
+}
+
+.kategori-no-image span {
+    font-size: 28px;
+}
+
+.kategori-no-image small {
+    font-size: 11px;
+}
+
+.kategori-card-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #183B55;
+    margin-bottom: 6px;
+}
+
+.kategori-card-price {
+    font-size: 12px;
+    color: #159BAE;
+    font-weight: 700;
+}
+
+@media (max-width: 500px) {
+    .kategori-pilihan-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    .kategori-card img,
+    .kategori-no-image {
+        height: 105px;
+    }
+}
+
+.kategori-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.kategori-card {
+    width: 185px;
+    padding: 12px;
+    border: 1px solid #DCE7ED;
+    border-radius: 13px;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    transition: .2s ease;
+}
+
+.kategori-card img {
+    width: 100%;
+    height: 125px;
+    object-fit: cover;
+    border-radius: 9px;
+}
+
+.kategori-card strong {
+    color: #183B55;
+    font-size: 14px;
+}
+
+.kategori-card span {
+    color: #159BAE;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.kategori-card:hover {
+    border-color: #159BAE;
+    transform: translateY(-3px);
+}
+
+.kategori-card.selected {
+    border: 2px solid #159BAE;
+    background: #EFF9FA;
+    box-shadow: 0 0 0 3px rgba(21,155,174,.10);
+}
+
+.kategori-tanpa-foto {
+    width: 100%;
+    height: 125px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #F1F6F9;
+    border-radius: 9px;
+    color: #8295A2;
+}
+
 </style>
 
 </head>
@@ -1389,39 +1537,76 @@ $kategori_query = mysqli_query(
 
                 <div class="petugas-form-grid">
 
-                    <!-- KATEGORI -->
+                    <!-- KATEGORI SAMPAH -->
+<div class="petugas-form-group full-width">
 
-                    <div class="petugas-form-group full-width">
+    <label>
+        Pilih Kategori Sampah <span>*</span>
+    </label>
 
-                        <label>
-                            Kategori Sampah <span>*</span>
-                        </label>
+    <!-- Menyimpan ID kategori yang dipilih -->
+    <input
+        type="hidden"
+        name="kategori_id"
+        id="kategori_id"
+        value="<?php echo htmlspecialchars((string)$kategori_id); ?>"
+    >
 
-                        <select
-                            name="kategori_id"
-                            id="kategori_id"
-                            required
-                        >
+    <div class="kategori-container">
 
-                            <option value="">
-                                Pilih kategori sampah
-                            </option>
+        <?php
+        $kategori_query = mysqli_query(
+            $conn,
+            "SELECT id, nama_kategori, harga_per_kg, foto
+             FROM kategori_sampah
+             WHERE status = 'aktif'
+             ORDER BY nama_kategori ASC"
+        );
+        ?>
 
-                            <?php while ($kategori = mysqli_fetch_assoc($kategori_query)) : ?>
+        <?php while ($kategori = mysqli_fetch_assoc($kategori_query)) : ?>
 
-                                <option
-                                    value="<?php echo (int)$kategori['id']; ?>"
-                                    data-harga="<?php echo htmlspecialchars((string)$kategori['harga_per_kg']); ?>"
-                                    <?php echo (string)$kategori_id === (string)$kategori['id'] ? 'selected' : ''; ?>
-                                >
-                                    <?php echo htmlspecialchars($kategori['nama_kategori']); ?>
-                                </option>
+            <div
+                class="kategori-card"
+                data-id="<?php echo (int)$kategori['id']; ?>"
+                data-harga="<?php echo (float)$kategori['harga_per_kg']; ?>"
+            >
 
-                            <?php endwhile; ?>
+                <?php
+                $nama_foto = basename((string)($kategori['foto'] ?? ''));
+                $path_foto = dirname(__DIR__) . '/uploads/kategori/' . $nama_foto;
+                $url_foto = '../uploads/kategori/' . rawurlencode($nama_foto);
+                ?>
 
-                        </select>
+                <?php if ($nama_foto !== '' && file_exists($path_foto)) : ?>
 
+                    <img
+                        src="<?php echo htmlspecialchars($url_foto); ?>"
+                        alt="<?php echo htmlspecialchars($kategori['nama_kategori']); ?>"
+                    >
+
+                <?php else : ?>
+
+                    <div class="kategori-tanpa-foto">
+                        Tidak ada foto
                     </div>
+
+                <?php endif; ?>
+
+                <strong>
+                    <?php echo htmlspecialchars($kategori['nama_kategori']); ?>
+                </strong>
+
+                <span>
+                    Rp<?php echo number_format((float)$kategori['harga_per_kg'], 0, ',', '.'); ?>/Kg
+                </span>
+
+            </div>
+
+        <?php endwhile; ?>
+
+    </div>
+</div>
 
 
                     <!-- BERAT -->
@@ -1534,97 +1719,37 @@ $kategori_query = mysqli_query(
         <?php endif; ?>
 
     </div>
+
+
+<!-- JAVASCRIPT ESTIMASI HARGA DAN MENU WARGA -->
+
 <script>
+document.addEventListener('DOMContentLoaded', function () {
 
-<!-- JAVASCRIPT ESTIMASI HARGA -->
-<script>
-const kategoriSelect = document.getElementById('kategori_id');
-const beratInput = document.getElementById('berat_kg');
-const hargaTampil = document.getElementById('harga_tampil');
-const totalTampil = document.getElementById('total_tampil');
+    alert('JavaScript halaman sudah aktif!');
 
-function hitungEstimasi() {
+    document.querySelectorAll('.kategori-card').forEach(function(card) {
 
-    // Pastikan elemen formulir tersedia
-    if (!kategoriSelect || !beratInput || !hargaTampil || !totalTampil) {
-        return;
-    }
+        card.addEventListener('click', function() {
 
-    const pilihan = kategoriSelect.options[
-        kategoriSelect.selectedIndex
-    ];
+            alert('Kartu kategori berhasil diklik: ' + this.dataset.id);
 
-    const harga = parseFloat(pilihan.dataset.harga) || 0;
-    const berat = parseFloat(beratInput.value) || 0;
-    const total = harga * berat;
+            const kategoriInput = document.getElementById('kategori_id');
 
-    const formatRupiah = angka => {
-        return 'Rp' + angka.toLocaleString('id-ID', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2
-        });
-    };
+            kategoriInput.value = this.dataset.id;
 
-    hargaTampil.textContent = formatRupiah(harga);
-    totalTampil.textContent = formatRupiah(total);
-}
+            document.querySelectorAll('.kategori-card').forEach(function(item) {
+                item.classList.remove('selected');
+            });
 
-if (kategoriSelect && beratInput) {
-    kategoriSelect.addEventListener('change', hitungEstimasi);
-    beratInput.addEventListener('input', hitungEstimasi);
-    hitungEstimasi();
-}
-
-
-// ===================================
-// HAMBURGER MENU WARGA
-// ===================================
-
-const menuButton = document.getElementById('mobileMenuButton');
-const sidebar = document.getElementById('wargaSidebar');
-const overlay = document.getElementById('sidebarOverlay');
-
-if (menuButton && sidebar && overlay) {
-
-    function bukaTutupMenu() {
-
-        sidebar.classList.toggle('open');
-        overlay.classList.toggle('show');
-
-        const isOpen = sidebar.classList.contains('open');
-
-        menuButton.innerHTML = isOpen ? '✕' : '☰';
-
-        menuButton.setAttribute(
-            'aria-expanded',
-            isOpen ? 'true' : 'false'
-        );
-    }
-
-    menuButton.addEventListener('click', bukaTutupMenu);
-
-    overlay.addEventListener('click', bukaTutupMenu);
-
-    sidebar.querySelectorAll('.sidebar-link').forEach(link => {
-
-        link.addEventListener('click', () => {
-
-            sidebar.classList.remove('open');
-            overlay.classList.remove('show');
-
-            menuButton.innerHTML = '☰';
-
-            menuButton.setAttribute('aria-expanded', 'false');
+            this.classList.add('selected');
 
         });
 
     });
-}
 
-
-</script>
+});
 </script>
 </main>
-
 </body>
 </html>

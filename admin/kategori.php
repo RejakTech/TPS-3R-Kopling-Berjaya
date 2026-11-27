@@ -122,7 +122,8 @@ $sql_kategori = "
         nama_kategori,
         deskripsi,
         harga_per_kg,
-        status
+        status,
+        foto
     FROM kategori_sampah
     $where_sql
     ORDER BY id DESC
@@ -458,6 +459,31 @@ function queryFilterKategori($keyword, $status)
             max-width: 300px;
             color: #6b7280;
             line-height: 1.5;
+        }
+
+        /* FOTO KATEGORI */
+        .kategori-photo {
+            width: 76px;
+            height: 64px;
+            object-fit: cover;
+            display: block;
+            border-radius: 9px;
+            border: 1px solid #e2edf0;
+            background: #f4f9f8;
+        }
+
+        .kategori-photo-empty {
+            width: 76px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 9px;
+            border: 1px dashed #cbd5e1;
+            background: #f8fafc;
+            color: #94a3b8;
+            font-size: 11px;
+            text-align: center;
         }
 
         .kategori-price {
@@ -1497,6 +1523,8 @@ function queryFilterKategori($keyword, $status)
 
                             <th>No</th>
 
+                            <th>Foto</th>
+
                             <th>Nama Kategori</th>
 
                             <th>Deskripsi</th>
@@ -1532,6 +1560,25 @@ function queryFilterKategori($keyword, $status)
                                 <?php echo $no++; ?>
                             </td>
 
+
+                            <td>
+                                <?php
+                                    $nama_foto = basename((string) ($kategori['foto'] ?? ''));
+                                    $path_foto = dirname(__DIR__) . '/uploads/kategori/' . $nama_foto;
+                                    $url_foto = '../uploads/kategori/' . rawurlencode($nama_foto);
+                                ?>
+
+                                <?php if ($nama_foto !== '' && is_file($path_foto)) : ?>
+                                    <img
+                                        src="<?php echo htmlspecialchars($url_foto, ENT_QUOTES, 'UTF-8'); ?>"
+                                        alt="Foto <?php echo htmlspecialchars($kategori['nama_kategori'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        class="kategori-photo"
+                                        loading="lazy"
+                                    >
+                                <?php else : ?>
+                                    <div class="kategori-photo-empty">Belum ada foto</div>
+                                <?php endif; ?>
+                            </td>
 
                             <td>
 
@@ -1661,7 +1708,7 @@ function queryFilterKategori($keyword, $status)
                         <tr>
 
                             <td
-                                colspan="6"
+                                colspan="7"
                                 class="kategori-empty"
                             >
 
